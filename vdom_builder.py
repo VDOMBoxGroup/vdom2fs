@@ -199,7 +199,7 @@ class Builder(object):
         for lib_name in os.listdir(libs_path):
             p = os.path.join(libs_path, lib_name)
             
-            if not os.path.isfile(p):
+            if not os.path.isfile(p) or lib_name in RESERVED_NAMES:
                 continue
 
             with self.open_file(p) as lib_f:
@@ -221,7 +221,7 @@ class Builder(object):
         for res_name in os.listdir(resources_path):
             p = os.path.join(resources_path, res_name)
             
-            if not os.path.isfile(p) or res_name == "map.json":
+            if not os.path.isfile(p) or res_name in RESERVED_NAMES:
                 continue
 
             attrs = res_map.get(res_name, None)
@@ -251,7 +251,7 @@ class Builder(object):
         for db_name in os.listdir(dbs_path):
             p = os.path.join(dbs_path, db_name)
             
-            if not os.path.isfile(p) or db_name == "map.json":
+            if not os.path.isfile(p) or db_name in RESERVED_NAMES:
                 continue
 
             attrs = db_map.get(db_name, None)

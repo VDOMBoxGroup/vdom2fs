@@ -186,8 +186,6 @@ class BaseDRTagHandler(TagHandler):
 
         self.create_base_dir()
 
-        # INFO("Starting parse <{}s>".format(self.TAG))
-
     def create_base_dir(self):
         Parser().append_to_current_path(self.FOLDER)
         Parser().create_folder_from_current_path()
@@ -262,7 +260,7 @@ class ResourcesTagHandler(BaseDRTagHandler):
     TAG = "Resource"
     
     def create_name(self, attrs):
-        return attrs["Name"]
+        return "{}-{}".format(attrs["ID"], attrs["Name"])
 
     def create_attrs(self, attrs):
         return attrs
@@ -462,11 +460,12 @@ class E2vdomTagHandler(TagHandler):
             self.unregister()
 
         elif tagname == "Event" and self.current_mode == "Events":
-            page = Parser().pages[self.current_node["ContainerID"]]
-            page["events"].append(self.current_node)
-            for action in self.current_node["actions"]:
-                if not page["actions"].get(action, ""):
-                    page["actions"][action] = ""
+            page = Parser().pages.get(self.current_node["ContainerID"], "")
+            if page:
+                page["events"].append(self.current_node)
+                for action in self.current_node["actions"]:
+                    if not page["actions"].get(action, ""):
+                        page["actions"][action] = ""
 
             self.current_node = ""
 
