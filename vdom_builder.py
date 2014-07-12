@@ -14,6 +14,24 @@ from uuid import uuid4 as uuid
 __version__ = "0.0.1"
 
 
+INFO_JSON = "__info__.json"
+E2VDOM_JSON = "__e2vdom__.json"
+MAP_JSON = "__map__.json"
+USERS_JSON = "__users__.json"
+GROUPS_JSON = "__groups__.json"
+STRUCT_JSON = "__struct__.json"
+LDAP_LDIF = "__ldap__.ldif"
+
+RESERVED_NAMES = (
+    INFO_JSON,
+    E2VDOM_JSON,
+    MAP_JSON,
+    USERS_JSON,
+    GROUPS_JSON,
+    LDAP_LDIF
+)
+
+
 def encode(data):
     return data.encode("utf-8")
 
@@ -80,7 +98,7 @@ class Builder(object):
     def build(self):
         """Finish parsing process and print statistics
         """
-        self.output.write("""<?xml version="1.0" encoding="utf-8"?><Application>\n""")
+        self.output.write("""<?xml version="1.0" encoding="utf-8"?>\n<Application>\n""")
 
         self.write_app_info()
         self.write_pages()
@@ -88,7 +106,7 @@ class Builder(object):
         self.write_libraries()
         self.write_structure()
 
-        self.output.write("""<Backupfiles/>\n""")
+        self.output.write("""  <Backupfiles/>\n""")
 
         self.write_resources()
         self.write_databases()
@@ -113,7 +131,7 @@ class Builder(object):
         ))
 
     def write_app_info(self):
-        info_path = os.path.join(self.src, "info.json")
+        info_path = os.path.join(self.src, INFO_JSON)
 
         if not os.path.exists(info_path):
             raise Exception("Can't find {}".format(info_path))
@@ -131,16 +149,23 @@ class Builder(object):
     def write_e2vdom(self):
         self.write_xml("E2vdom", indent=2)
 
-        e2vdom_path = os.path.join(self.src, "e2vdom.json")
-        if not os.path.exists(e2vdom_path):
-            raise Exception("Can't find {}".format(e2vdom_path))
+        pages_path = os.path.join(self.src, "Pages")
 
-        with self.open_file(e2vdom_path) as e2vdom_file:
-            e2vdom = json.load(e2vdom_file)
+        all_events = []
+        all_actions = []
+
+        for name in os.listdir(pages_path):
+            e2vdom_path = os.path.join(pages_path, name, E2VDOM_JSON)
+            if os.path.exists(e2vdom_path):
+
+                with self.open_file(e2vdom_path) as e2vdom_file:
+                    e2vdom = json.load(e2vdom_file)
+                    all_events.extend(e2vdom["events"])
+                    all_actions.extend(e2vdom["actions"])
 
         self.write_xml("Events", indent=4)
 
-        for event in e2vdom["events"]:
+        for event in all_events:
             actions = event.pop("actions")
             self.write_xml("Event", attrs=event, indent=6)
 
@@ -152,7 +177,7 @@ class Builder(object):
         self.write_xml("Events", indent=4, closing=True)
         self.write_xml("Actions", indent=4)
 
-        for action in e2vdom["actions"]:
+        for action in all_actions:
             params = action.pop("params")
             self.write_xml("Action", attrs=action, indent=6)
 
@@ -190,7 +215,7 @@ class Builder(object):
         if not os.path.exists(resources_path):
             raise Exception("Can't find {}".format(resources_path))
 
-        with self.open_file(os.path.join(resources_path, "map.json")) as res_map_file:
+        with self.open_file(os.path.join(resources_path, MAP_JSON)) as res_map_file:
             res_map = json.load(res_map_file)
 
         for res_name in os.listdir(resources_path):
@@ -220,7 +245,7 @@ class Builder(object):
         if not os.path.exists(dbs_path):
             raise Exception("Can't find {}".format(dbs_path))
 
-        with self.open_file(os.path.join(dbs_path, "map.json")) as db_map_file:
+        with self.open_file(os.path.join(dbs_path, MAP_JSON)) as db_map_file:
             db_map = json.load(db_map_file)
 
         for db_name in os.listdir(dbs_path):
@@ -245,7 +270,7 @@ class Builder(object):
         
 
     def write_structure(self):
-        structure_path = os.path.join(self.src, "structure.json")
+        structure_path = os.path.join(self.src, STRUCT_JSON)
 
         if not os.path.exists(structure_path):
             raise Exception("Can't find {}".format(structure_path))
@@ -273,7 +298,7 @@ class Builder(object):
         #     with self.open_file(groups_path) as f:
         #         groups_json = json.load(f)
 
-        users_path = os.path.join(security_path, "users.json")
+        users_path = os.path.join(security_path, USERS_JSON)
         users_json = []
 
         if os.path.exists(users_path):
@@ -300,7 +325,7 @@ class Builder(object):
 
         self.write_xml("Users", indent=4, closing=True)
 
-        ldap_path = os.path.join(security_path, "ldap.ldif")
+        ldap_path = os.path.join(security_path, LDAP_LDIF)
         if os.path.exists(ldap_path):
             with self.open_file(ldap_path) as f:
                 self.write_xml("LDAP", indent=4, data=base64.b64encode(f.read()), close=True)
@@ -321,11 +346,17 @@ class Builder(object):
             self.walk(pages_path, page, indent=4)
         self.write_xml("Objects", indent=2, closing=True)
 
+        self.write_xml("Actions", indent=2)
+        path = os.path.join(pages_path, "Actions-Application")
+        if os.path.exists(path):
+            self.write_actions(path, 4)
+        self.write_xml("Actions", indent=2, closing=True)
+
     def walk(self, path, name, indent):
         new_path = os.path.join(path, name)
         actions_folder = "Actions-{}".format(name)
 
-        info_path = os.path.join(new_path, "info.json")
+        info_path = os.path.join(new_path, INFO_JSON)
         if not os.path.exists(info_path):
             raise Exception("Can't find {}".format(info_path))
 
@@ -337,7 +368,7 @@ class Builder(object):
         self.write_xml("Objects", indent=indent+2)
         
         for name in os.listdir(new_path):
-            if name in ("info.json", actions_folder):
+            if name in RESERVED_NAMES or name == actions_folder:
                 continue
 
             elif os.path.isdir(os.path.join(new_path, name)):
@@ -351,18 +382,19 @@ class Builder(object):
         self.write_xml("Object", indent=indent, closing=True)
 
     def write_actions(self, path, indent):
-        actions_map_path = os.path.join(path, "map.json")
+        actions_map_path = os.path.join(path, MAP_JSON)
+
         if not os.path.exists(actions_map_path):
             raise Exception("Can't find {}".format(actions_map_path))
 
         with self.open_file(actions_map_path) as actions_map_file:
-            actions_map = json.load(actions_map_file)        
-    
+            actions_map = json.load(actions_map_file) 
+
         self.write_xml("Actions", indent=indent)
         
         for action_name in os.listdir(path):
             p = os.path.join(path, action_name)
-            if not os.path.isfile(p) or action_name == "map.json":
+            if not os.path.isfile(p) or action_name in RESERVED_NAMES:
                 continue
 
             attrs = actions_map.get(action_name, None)

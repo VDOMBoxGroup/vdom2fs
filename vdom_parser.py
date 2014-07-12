@@ -21,6 +21,24 @@ DEBUG = None
 JSON_INDENT = 4
 
 
+INFO_JSON = "__info__.json"
+E2VDOM_JSON = "__e2vdom__.json"
+MAP_JSON = "__map__.json"
+USERS_JSON = "__users__.json"
+GROUPS_JSON = "__groups__.json"
+STRUCT_JSON = "__struct__.json"
+LDAP_LDIF = "__ldap__.ldif"
+
+RESERVED_NAMES = (
+    INFO_JSON,
+    E2VDOM_JSON,
+    MAP_JSON,
+    USERS_JSON,
+    GROUPS_JSON,
+    LDAP_LDIF
+)
+
+
 def encode(data):
     return data.encode("utf-8")
 
@@ -151,7 +169,7 @@ class InformationTagHandler(TagHandler):
 
 
     def save(self):
-        Parser().write_file('info.json', json.dumps(self.data, indent=JSON_INDENT))
+        Parser().write_file(INFO_JSON, json.dumps(self.data, indent=JSON_INDENT))
 
 
 class BaseDRTagHandler(TagHandler):
@@ -253,7 +271,7 @@ class ResourcesTagHandler(BaseDRTagHandler):
         Parser().write_file(self.current["name"], base64.b64decode(self.current["file"].getvalue()))
 
     def save_map(self):
-        Parser().write_file("map.json", json.dumps(self.map, indent=JSON_INDENT))
+        Parser().write_file(MAP_JSON, json.dumps(self.map, indent=JSON_INDENT))
 
     def create_new_file_handler(self, name):
         return cStringIO.StringIO()
@@ -283,6 +301,11 @@ class PagesTagHandler(TagHandler):
     def child_start(self, tagname, attrs):
         if tagname == "Object":
             ObjectTagHandler(tagname, attrs).register()
+            Parser().pages[attrs["ID"]] = {
+                "name": attrs["Name"],
+                "events": [],
+                "actions": {}
+            }
 
     def child_end(self, tagname):
         if tagname == "Objects":
@@ -344,7 +367,7 @@ class ActionsTagHandler(TagHandler):
         self.actions_map[self.current_action["name"]] = self.current_action["attrs"]
 
     def save_actions_map(self):
-        Parser().write_file("map.json", json.dumps(self.actions_map, indent=JSON_INDENT))
+        Parser().write_file(MAP_JSON, json.dumps(self.actions_map, indent=JSON_INDENT))
 
 
 class ObjectTagHandler(TagHandler):
@@ -391,7 +414,7 @@ class ObjectTagHandler(TagHandler):
             self.unregister()
        
     def save(self):
-        name = "info.json" if self.has_folder or self.actions_found else self.attrs["Name"]
+        name = INFO_JSON if self.has_folder or self.actions_found else "{}.json".format(self.attrs["Name"])
 
         data = {"attrs": self.attrs, "attributes": {k: clear_data("".join(v)) for k,v in self.attributes.items()}}
         Parser().write_file(name, json.dumps(data, indent=JSON_INDENT))
@@ -404,8 +427,6 @@ class E2vdomTagHandler(TagHandler):
 
     def __init__(self, *args, **kwargs):
         super(E2vdomTagHandler, self).__init__(*args, **kwargs)
-        self.events = []
-        self.actions = []
         self.current_mode = ""
         self.current_node = None
         self.accept_data = False
@@ -441,16 +462,27 @@ class E2vdomTagHandler(TagHandler):
             self.unregister()
 
         elif tagname == "Event" and self.current_mode == "Events":
-            self.events.append(self.current_node)
+            page = Parser().pages[self.current_node["ContainerID"]]
+            page["events"].append(self.current_node)
+            for action in self.current_node["actions"]:
+                if not page["actions"].get(action, ""):
+                    page["actions"][action] = ""
+
+            self.current_node = ""
 
         elif tagname == "Events" and self.current_mode == "Events":
             self.current_mode = ""
 
         elif tagname == "Action" and self.current_mode == "Actions":
-            self.actions.append(self.current_node)
+            for page in Parser().pages.values():
+                if self.current_node["ID"] in page["actions"]:
+                    page["actions"][self.current_node["ID"]] = self.current_node
+                    break
+   
+            self.current_node = ""
 
         elif tagname == "Actions" and self.current_mode == "Actions":
-            self.current_node = ""
+            self.current_mode = ""
 
         elif tagname == "Parameter" and self.current_mode == "Actions":
             self.accept_data = False
@@ -458,15 +490,22 @@ class E2vdomTagHandler(TagHandler):
 
 
     def save(self):
-        Parser().write_file(
-            "e2vdom.json", 
-            json.dumps(
-                {
-                    "actions": self.actions, 
-                    "events": self.events
-                }, 
-                indent=JSON_INDENT)
-        )
+        Parser().append_to_current_path("Pages")
+        for page in Parser().pages.values():
+            Parser().append_to_current_path(page["name"])
+            Parser().write_file(
+                E2VDOM_JSON, 
+                json.dumps(
+                    {
+                        "events": page["events"], 
+                        "actions": [v for v in page["actions"].values() if v]
+                    }, 
+                    indent=JSON_INDENT)
+            )
+
+            Parser().pop_from_current_path()
+
+        Parser().pop_from_current_path()
 
 
 class SecurityTagHandler(TagHandler):
@@ -532,6 +571,9 @@ class SecurityTagHandler(TagHandler):
             elif tagname == "User":
                 self.users.append(dict(self.current_node))
 
+                # uncomment following string if order is important 
+                # self.users.append(self.current_node) 
+
             elif tagname in ("Login", "Password", "FirstName", "LastName", "Email", "SecurityLevel", "MemberOf"):
                 self.accept_data = False
                 self.current_node[-1][1] = "".join(self.current_node[-1][1])
@@ -539,19 +581,19 @@ class SecurityTagHandler(TagHandler):
     def save(self):
         if self.users:
             Parser().write_file(
-                "users.json", 
+                USERS_JSON, 
                 json.dumps(self.users, indent=JSON_INDENT)
             )
 
         if self.groups:
             Parser().write_file(
-                "groups.json", 
+                GROUPS_JSON, 
                 json.dumps(self.groups, indent=JSON_INDENT)
             )
 
         if self.ldapf:
             Parser().write_file(
-                "ldap.ldif",
+                LDAP_LDIF,
                 base64.b64decode(self.ldapf.getvalue())
             )
 
@@ -575,7 +617,7 @@ class StructureTagHandler(TagHandler):
         pass
 
     def save(self):
-        Parser().write_file("structure.json", json.dumps(self.structure, indent=JSON_INDENT))
+        Parser().write_file(STRUCT_JSON, json.dumps(self.structure, indent=JSON_INDENT))
 
 
 class ApplicationTagHandler(TagHandler):
@@ -631,6 +673,7 @@ class Parser(object):
 
         self._handlers_stack = []
         self._current_path = []
+        self.pages = {}
 
         return self
 
