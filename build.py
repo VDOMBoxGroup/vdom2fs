@@ -1,55 +1,66 @@
-#!/usr/bin/python
-#encoding: utf-8
+#!/usr/local/bin/python
+# encoding: utf-8
 
-import os
 import sys
 
+if sys.version_info < (2, 7):
+    raise Exception("must use python 2.7 or greater")
+
+import argparse
 import vdom_builder
-
-############## MAIN FUNCTIONS ##############
-
-def print_help():
-    """Print help Information
-    """
-
-    print " usage: parse.py source_folder [dst]\n\tdst - destination XML file name\n\n"
-
-
-def parse_args():
-    """Parse CLI args
-    """
-
-    return {
-        "src": sys.argv[1],
-        "dst": sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] != "-d" else "",
-        "debug": "-d" in sys.argv[1:]
-    }
 
 
 def main():
     """Main function
     """
+    args_parser = argparse.ArgumentParser()
+    args_parser.add_argument(
+        "src",
+        help="path to source folder",
+        type=str
+    )
+    args_parser.add_argument(
+        "dst",
+        help="path to destination XML file",
+        type=str
+    )
+    args_parser.add_argument(
+        "-v",
+        "--verbose",
+        help="increase output verbosity",
+        action="store_true",
+        default=False,
+    )
+    args_parser.add_argument(
+        "-l",
+        "--library",
+        help="path to library folder",
+        type=str,
+    )
+    args_parser.add_argument(
+        "-lcm",
+        "--library-copy-mode",
+        help=("library cope mode: instead - use passed "
+              "foler instead of existing, replace - replace "
+              "existing files with new"),
+        choices=("instead", "replace"),
+        default="instead",
+        type=str,
+    )
 
-    print "\nVDOM Application XML builder (v. {version})\n".format(version=vdom_builder.__version__)
+    args = args_parser.parse_args()
 
-    if len(sys.argv) == 1:
-        print_help()
+    vdom_bl = vdom_builder.create()
 
-    else:
-        args = parse_args()
+    vdom_bl.src = args.src
+    vdom_bl.dst = args.dst
+    vdom_bl.debug = args.verbose
+    vdom_bl.library = args.library
+    vdom_bl.library_copy_mode = args.library_copy_mode
 
-        builder = vdom_builder.create()
+    vdom_bl.start()
 
-        if args["debug"]: 
-            builder.debug = True
-        
-        if args["dst"]: 
-            builder.dst = args["dst"]
-
-        builder.src = args["src"]
-        builder.start()
-
-    sys.exit(0)
 
 if __name__ == "__main__":
     main()
+    sys.exit(0)

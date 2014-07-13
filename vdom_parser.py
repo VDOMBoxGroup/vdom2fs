@@ -1,22 +1,16 @@
-#!/usr/bin/python
-#encoding: utf-8
+#!/usr/local/bin/python
+# encoding: utf-8
 
 import base64
 import collections
 import cStringIO
 import json
-import logging
 import os
 import sys
-import xml
+import xml.parsers.expat
 
 __version__ = "0.0.1"
 
-
-
-# Logging
-INFO = None
-DEBUG = None
 
 JSON_INDENT = 4
 
@@ -47,30 +41,11 @@ def build_path(*args):
     return os.path.join(*args)
 
 
-empty_string = set(["\n", "\t"])
 def clear_data(data):
-    if len(set(data) - empty_string) > 0:
+    if len(set(data) - set(["\n", "\t"])) > 0:
         return data
     else:
         return ""
-
-def setup_logging(debug=False):
-    """Setup logging
-    """
-    global DEBUG, INFO
-
-    debug_level = logging.DEBUG if debug else logging.INFO
-
-    ch = logging.StreamHandler(sys.stdout)
-    ch.setLevel(debug_level)
-    ch.setFormatter(logging.Formatter('%(asctime)s :: %(levelname)s :: %(message)s'))
-
-    root = logging.getLogger()
-    root.setLevel(debug_level)
-    root.addHandler(ch)
-
-    DEBUG = root.debug
-    INFO = root.info
 
 
 def create_dir(name):
@@ -87,7 +62,6 @@ def create_dir(name):
 
     os.mkdir(app_path)
     return app_path
-
 
 
 class TagHandler(object):
@@ -153,23 +127,28 @@ class InformationTagHandler(TagHandler):
 
     def child_start(self, tagname, attrs):
         self.current_tag = tagname
-    
+
     def child_data(self, data, depth=0):
         if self.current_tag:
             self.data[self.current_tag].append(encode(data))
-        
+
     def child_end(self, tagname, depth=0):
         if tagname != "Information":
             self.current_tag = ""
 
         else:
-            self.data = {k: "".join(v) for k,v in self.data.items()}
-            self.save()            
+            self.data = {k: "".join(v) for k, v in self.data.items()}
+            self.save()
             self.unregister()
 
-
     def save(self):
-        Parser().write_file(INFO_JSON, json.dumps(self.data, indent=JSON_INDENT))
+        Parser().write_file(
+            INFO_JSON,
+            json.dumps(
+                self.data,
+                indent=JSON_INDENT
+            )
+        )
 
 
 class BaseDRTagHandler(TagHandler):
@@ -214,7 +193,9 @@ class BaseDRTagHandler(TagHandler):
                 "attrs": self.create_attrs(attrs)
             }
 
-            self.current["file"] = self.create_new_file_handler(self.current["name"])
+            self.current["file"] = self.create_new_file_handler(
+                self.current["name"]
+            )
 
     def child_data(self, data):
         if self.current:
@@ -237,7 +218,7 @@ class LibrariesTagHandler(BaseDRTagHandler):
 
     FOLDER = "Libraries"
     TAG = "Library"
-    
+
     def create_name(self, attrs):
         return "{}.py".format(attrs["Name"])
 
@@ -245,7 +226,10 @@ class LibrariesTagHandler(BaseDRTagHandler):
         return attrs
 
     def save_file(self):
-        Parser().write_file(self.current["name"], self.current["file"].getvalue())
+        Parser().write_file(
+            self.current["name"],
+            self.current["file"].getvalue()
+        )
 
     def save_map(self):
         pass
@@ -258,7 +242,7 @@ class ResourcesTagHandler(BaseDRTagHandler):
 
     FOLDER = "Resources"
     TAG = "Resource"
-    
+
     def create_name(self, attrs):
         return "{}-{}".format(attrs["ID"], attrs["Name"])
 
@@ -266,7 +250,10 @@ class ResourcesTagHandler(BaseDRTagHandler):
         return attrs
 
     def save_file(self):
-        Parser().write_file(self.current["name"], base64.b64decode(self.current["file"].getvalue()))
+        Parser().write_file(
+            self.current["name"],
+            base64.b64decode(self.current["file"].getvalue())
+        )
 
     def save_map(self):
         Parser().write_file(MAP_JSON, json.dumps(self.map, indent=JSON_INDENT))
@@ -279,7 +266,7 @@ class DatabasesTagHandler(ResourcesTagHandler):
 
     FOLDER = "Databases"
     TAG = "Database"
-    
+
     def create_name(self, attrs):
         return "{}.{}".format(attrs["Name"], attrs["Type"])
 
@@ -320,16 +307,14 @@ class ActionsTagHandler(TagHandler):
         self.current_action = None
         self.actions_map = {}
 
-        DEBUG("Started parsing actions")
-
     def create_base_dir(self):
         self.parent.create_dir()
 
-        Parser().append_to_current_path("Actions-{}".format(self.parent.attrs["Name"]))
+        Parser().append_to_current_path(
+            "Actions-{}".format(self.parent.attrs["Name"])
+        )
         Parser().create_folder_from_current_path()
 
-        DEBUG("Folder created - {}".format(Parser().current_path()))
-        
     def child_start(self, tagname, attrs):
         if tagname == "Action":
             if not self.count:
@@ -361,15 +346,25 @@ class ActionsTagHandler(TagHandler):
             self.unregister()
 
     def save_action(self):
-        Parser().write_file(self.current_action["name"], self.current_action["file"].getvalue())
-        self.actions_map[self.current_action["name"]] = self.current_action["attrs"]
+        Parser().write_file(
+            self.current_action["name"],
+            self.current_action["file"].getvalue()
+        )
+        self.actions_map[self.current_action["name"]] = \
+            self.current_action["attrs"]
 
     def save_actions_map(self):
-        Parser().write_file(MAP_JSON, json.dumps(self.actions_map, indent=JSON_INDENT))
+        Parser().write_file(
+            MAP_JSON,
+            json.dumps(
+                self.actions_map,
+                indent=JSON_INDENT
+            )
+        )
 
 
 class ObjectTagHandler(TagHandler):
-    
+
     def __init__(self, *args, **kwargs):
         super(ObjectTagHandler, self).__init__(*args, **kwargs)
 
@@ -383,7 +378,6 @@ class ObjectTagHandler(TagHandler):
         if not self.has_folder:
             Parser().append_to_current_path(self.attrs["Name"])
             Parser().create_folder_from_current_path()
-            DEBUG("Folder created - {}".format(Parser().current_path()))
             self.has_folder = True
 
     def child_start(self, tagname, attrs):
@@ -410,14 +404,20 @@ class ObjectTagHandler(TagHandler):
         elif tagname == "Object":
             self.save()
             self.unregister()
-       
-    def save(self):
-        name = INFO_JSON if self.has_folder or self.actions_found else "{}.json".format(self.attrs["Name"])
 
-        data = {"attrs": self.attrs, "attributes": {k: clear_data("".join(v)) for k,v in self.attributes.items()}}
+    def save(self):
+        name = INFO_JSON if self.has_folder or self.actions_found else \
+            "{}.json".format(self.attrs["Name"])
+
+        data = {
+            "attrs": self.attrs,
+            "attributes": {
+                k: clear_data("".join(v)) for k, v in self.attributes.items()
+            }
+        }
         Parser().write_file(name, json.dumps(data, indent=JSON_INDENT))
 
-        if self.has_folder or self.actions_found :
+        if self.has_folder or self.actions_found:
             Parser().pop_from_current_path()
 
 
@@ -441,7 +441,9 @@ class E2vdomTagHandler(TagHandler):
             elif tagname == "Action":
                 self.current_node["actions"].append(attrs["ID"])
 
-        elif tagname in ("Action", "Parameter") and self.current_mode == "Actions":
+        elif tagname in ("Action", "Parameter") and \
+                self.current_mode == "Actions":
+
             if tagname == "Action":
                 self.current_node = attrs
                 self.current_node["params"] = []
@@ -475,9 +477,10 @@ class E2vdomTagHandler(TagHandler):
         elif tagname == "Action" and self.current_mode == "Actions":
             for page in Parser().pages.values():
                 if self.current_node["ID"] in page["actions"]:
-                    page["actions"][self.current_node["ID"]] = self.current_node
+                    page["actions"][self.current_node["ID"]] = \
+                        self.current_node
                     break
-   
+
             self.current_node = ""
 
         elif tagname == "Actions" and self.current_mode == "Actions":
@@ -485,20 +488,20 @@ class E2vdomTagHandler(TagHandler):
 
         elif tagname == "Parameter" and self.current_mode == "Actions":
             self.accept_data = False
-            self.current_node["params"][-1][1] = "".join(self.current_node["params"][-1][1])
-
+            self.current_node["params"][-1][1] = \
+                "".join(self.current_node["params"][-1][1])
 
     def save(self):
         Parser().append_to_current_path("Pages")
         for page in Parser().pages.values():
             Parser().append_to_current_path(page["name"])
             Parser().write_file(
-                E2VDOM_JSON, 
+                E2VDOM_JSON,
                 json.dumps(
                     {
-                        "events": page["events"], 
+                        "events": page["events"],
                         "actions": [v for v in page["actions"].values() if v]
-                    }, 
+                    },
                     indent=JSON_INDENT)
             )
 
@@ -514,7 +517,7 @@ class SecurityTagHandler(TagHandler):
     def __init__(self, *args, **kwargs):
         super(SecurityTagHandler, self).__init__(*args, **kwargs)
         self.groups = []
-        self.users  = []
+        self.users = []
         self.current_mode = ""
         self.current_node = None
         self.accept_data = False
@@ -534,7 +537,10 @@ class SecurityTagHandler(TagHandler):
             if tagname == "User":
                 self.current_node = []
 
-            elif tagname in ("Login", "Password", "FirstName", "LastName", "Email", "SecurityLevel", "MemberOf"):
+            elif tagname in ("Login", "Password", "FirstName",
+                             "LastName", "Email", "SecurityLevel",
+                             "MemberOf"):
+
                 self.current_node.append([tagname, []])
                 self.accept_data = True
 
@@ -556,7 +562,6 @@ class SecurityTagHandler(TagHandler):
             elif self.current_mode == "LDAP":
                 self.ldapf.write(data)
 
-
     def child_end(self, tagname):
         if tagname == "Security":
             self.save()
@@ -570,23 +575,26 @@ class SecurityTagHandler(TagHandler):
             elif tagname == "User":
                 self.users.append(dict(self.current_node))
 
-                # uncomment following string if order is important 
-                # self.users.append(self.current_node) 
+                # uncomment following string if order is important
+                # self.users.append(self.current_node)
 
-            elif tagname in ("Login", "Password", "FirstName", "LastName", "Email", "SecurityLevel", "MemberOf"):
+            elif tagname in ("Login", "Password", "FirstName",
+                             "LastName", "Email", "SecurityLevel",
+                             "MemberOf"):
+
                 self.accept_data = False
                 self.current_node[-1][1] = "".join(self.current_node[-1][1])
 
     def save(self):
         if self.users:
             Parser().write_file(
-                USERS_JSON, 
+                USERS_JSON,
                 json.dumps(self.users, indent=JSON_INDENT)
             )
 
         if self.groups:
             Parser().write_file(
-                GROUPS_JSON, 
+                GROUPS_JSON,
                 json.dumps(self.groups, indent=JSON_INDENT)
             )
 
@@ -616,7 +624,13 @@ class StructureTagHandler(TagHandler):
         pass
 
     def save(self):
-        Parser().write_file(STRUCT_JSON, json.dumps(self.structure, indent=JSON_INDENT))
+        Parser().write_file(
+            STRUCT_JSON,
+            json.dumps(
+                self.structure,
+                indent=JSON_INDENT
+            )
+        )
 
 
 class ApplicationTagHandler(TagHandler):
@@ -640,21 +654,16 @@ class ApplicationTagHandler(TagHandler):
         handler_cls = TAG_HANDLERS_MAP.get(tagname, None)
         if handler_cls:
             handler_cls(tagname, attrs).register()
-        
 
     def child_end(self, tagname, depth=0):
         if tagname == "Application":
             self.unregister()
 
 
-
-
-
-
 class Parser(object):
 
     __instance = None
-    
+
     def __new__(cls, *a, **kwa):
         if cls.__instance is None:
             cls.__instance = object.__new__(cls)
@@ -664,7 +673,7 @@ class Parser(object):
         self.debug = debug
         self.src = src
         self.dst = dst
-        
+
         self.statisitcs = {
             "unknown": 0,
             "files": 0
@@ -713,7 +722,7 @@ class Parser(object):
 
         else:
             raise Exception("Handler register: handler already in stack")
-    
+
     def remove_tag_handler_from_stack(self, handler):
         if self.tag_handlers[-1] != handler:
             raise Exception("Handler unregister: invalid handler")
@@ -738,21 +747,17 @@ class Parser(object):
     def start(self):
         """Setup logging and start main process
         """
-        setup_logging(debug=self.debug)
         self.dst = create_dir(self.dst or "Application")
         self.append_to_current_path(self.dst)
-
-        INFO("Destination folder created - {}".format(self.dst))
 
         RootHandler().register()
 
         p = xml.parsers.expat.ParserCreate()
         p.StartElementHandler = self.start_element
-        p.EndElementHandler = self.end_element 
+        p.EndElementHandler = self.end_element
         p.CharacterDataHandler = self.char_data
         p.ParseFile(open(self.src))
 
-        INFO("Destination folder - {}".format(self.dst))
         self.done()
 
     def done(self):
@@ -760,5 +765,10 @@ class Parser(object):
         """
         pass
 
+
 def create():
     return Parser().initialize()
+
+
+if __name__ == "__main__":
+    sys.exit(0)
