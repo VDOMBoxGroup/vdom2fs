@@ -21,6 +21,7 @@ USERS_JSON = "__users__.json"
 GROUPS_JSON = "__groups__.json"
 STRUCT_JSON = "__struct__.json"
 LDAP_LDIF = "__ldap__.ldif"
+INIT_PY = "__init__.py"
 
 RESERVED_NAMES = (
     INFO_JSON,
@@ -28,7 +29,8 @@ RESERVED_NAMES = (
     MAP_JSON,
     USERS_JSON,
     GROUPS_JSON,
-    LDAP_LDIF
+    LDAP_LDIF,
+    INIT_PY
 )
 
 
