@@ -429,7 +429,7 @@ class Builder(object):
         self.write_xml("Objects", indent=2, closing=True)
 
         self.write_xml("Actions", indent=2)
-        path = os.path.join(pages_path, "Actions-Application")
+        path = os.path.join(self.src, "Actions-Application")
         if os.path.exists(path):
             self.write_actions(path, 4)
         self.write_xml("Actions", indent=2, closing=True)
