@@ -12,9 +12,9 @@ import shutil
 from uuid import UUID
 
 import constants
-from helpers import setup_logging, DEBUG, INFO, ERROR, WARNING, CRITICAL, \
-    EXCEPTION, check_python_version, script_exit, \
-    emergency_exit, create_folder, uuid as gen_guid, read_file, json_load, \
+from helpers import setup_logging, DEBUG, INFO, ERROR, \
+    check_python_version, script_exit, \
+    create_folder, uuid as gen_guid, json_load, \
     open_file as fopen, json_dump
 
 
@@ -122,7 +122,12 @@ def copy_files(target, sources, config):
     for source in sources:
 
         path = ""
-        params = dict(rename=None, exclude=None, include=None)
+        params = {
+            "rename": None,
+            "exclude": None,
+            "include": None,
+            "regexp": None
+        }
 
         # it can be single file or folder
         # with additional params like rename,
@@ -134,6 +139,16 @@ def copy_files(target, sources, config):
                 params[param] = val = source.get(param, None)
                 if val and not isinstance(val, (list, tuple, dict)):
                     params[param] = (val,)
+
+            if params["regexp"]:
+                compiled = []
+                for pattern in params["regexp"]:
+                    try:
+                        compiled.append(re.compile(pattern))
+                    except Exception:
+                        ERROR("Invalid pattern: {}".format(pattern))
+
+                params["regexp"] = compiled
 
         # it can be single file or folder
         # without additional params
@@ -158,6 +173,17 @@ def copy_files(target, sources, config):
             # if file not in include list - continue
             if params["include"] and name not in params["include"]:
                 continue
+
+            # check regexps
+            if params["regexp"]:
+                matched = False
+                for regexp in params["regexp"]:
+                    if regexp.match(name):
+                        matched = True
+                        break
+
+                if not matched:
+                    continue
 
             # if file in rename list - rename it, else use source name
             if params["rename"] and \
