@@ -144,7 +144,7 @@ def copy_files(target, sources, config):
                 compiled = []
                 for pattern in params["regexp"]:
                     try:
-                        compiled.append(re.compile(pattern))
+                        compiled.append(re.compile(pattern, re.I))
                     except Exception:
                         ERROR("Invalid pattern: {}".format(pattern))
 
