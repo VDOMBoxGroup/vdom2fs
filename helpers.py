@@ -4,6 +4,7 @@
 import json
 import logging
 import os
+import re
 import shutil
 import sys
 
@@ -11,7 +12,6 @@ from uuid import uuid4
 
 from logging import debug as DEBUG, \
     info as INFO, \
-    warning as WARNING, \
     critical as CRITICAL, \
     error as ERROR, \
     exception as EXCEPTION
@@ -33,6 +33,26 @@ def setup_logging(log_level=logging.INFO, module_name=False):
         u"%(filename)s:%(lineno)-5d # " if module_name else u"")
 
     logging.basicConfig(format=msg, level=log_level)
+
+
+# Block end line
+BLOCK_END = "+"*70
+
+
+def print_block_end(func):
+    """Prints 70 '+' chars after function call
+    """
+    def wrapper(*args, **kwargs):
+        """Call function and print line
+        """
+        result = func(*args, **kwargs)
+        INFO("")
+        INFO(BLOCK_END)
+        INFO("")
+
+        return result
+
+    return wrapper
 
 
 # ####### SYSTEM HELPERS #######
@@ -65,7 +85,7 @@ def uuid():
 
 
 def json_load(data, default=None, critical=False):
-    """Add doc_string here
+    """Load JSON from string or file
     """
     try:
         return (json.loads if not hasattr(data, 'read') else json.load)(data)
@@ -81,8 +101,8 @@ def json_load(data, default=None, critical=False):
             return default
 
 
-def json_dump(data, fhandler=None, critical=False, default=None,):
-    """Add doc_string here
+def json_dump(data, fhandler=None, critical=False, default=None):
+    """Dump data to JSON and write to string or file
     """
     try:
         if fhandler:
@@ -103,6 +123,12 @@ def json_dump(data, fhandler=None, critical=False, default=None,):
 
 
 ####### FILE SYSTEM HELPERS #######
+
+def build_path(*args):
+    """Build path from list
+    """
+    return os.path.join(*args)
+
 
 def erase_dir(path):
     """Remove all folders and files in dir @path
@@ -215,3 +241,47 @@ def open_file(path, mode="rb"):
         CRITICAL("Can't open file '%s'", path)
         EXCEPTION("")
         emergency_exit()
+
+
+####### DATA HELPERS #######
+
+def clean_data(data, strip=True):
+    if len(set(data) - set(["\n", "\t"])) > 0:
+        return data.strip("\n\t\r") if strip else data
+
+    else:
+        return ""
+
+
+def encode(data, encoding="utf-8"):
+    return data.encode(encoding)
+
+
+def decode(data, encoding="utf-8"):
+    return data.decode(encoding)
+
+
+def convert_to_regexp(patterns):
+    """Return list of regexp objects
+    """
+    regexp_list = []
+    for pattern in patterns:
+        try:
+            print pattern
+            regexp_list.append(re.compile(pattern, re.I))
+        except Exception:
+            ERROR("Invalid pattern: %s", pattern)
+            emergency_exit()
+
+    return regexp_list
+
+
+def check_by_regexps(data, regexp_list):
+    """Check data using regexp
+    """
+    for regexp in regexp_list:
+        if regexp.match(data):
+            return True
+
+    else:
+        return False

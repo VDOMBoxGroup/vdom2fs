@@ -1,48 +1,1050 @@
-#!/usr/local/bin/python
+#!/usr/bin/env python
 # encoding: utf-8
 
-import sys
-
-if sys.version_info < (2, 7):
-    raise Exception("must use python 2.7 or greater")
 
 import argparse
-import vdom_parser
+import base64
+import cStringIO
+import json
+import logging
+import os
+import re
+import xml.parsers.expat
+
+from collections import OrderedDict, defaultdict
+
+import constants
+from helpers import setup_logging, DEBUG, INFO, ERROR, \
+    check_python_version, script_exit, \
+    create_folder, open_file, json_dump, \
+    build_path, clean_data, encode, BLOCK_END, \
+    print_block_end, emergency_exit, check_by_regexps, \
+    convert_to_regexp, json_load
+
+
+# UUID regexp pattern
+RE_RES_UUID = re.compile("[0-F]{8}-[0-F]{4}-[0-F]{4}-[0-F]{4}-[0-F]{12}", re.I)
+
+
+# global variable for application parses
+PARSER = None
+
+
+# action file extention (.py or .vb)
+ACTION_EXT = ""
+
+
+# resources GUIDs list
+RESOURCES = {}
+
+
+# ignore settings
+IGNORE = None
+
+
+def detect_guids(data):
+    """Find all UUID in data and update page GUIDs list
+    """
+    if "current" in PARSER.pages:
+        page_id = PARSER.pages["current"]
+        PARSER.pages[page_id]["guids"].extend(RE_RES_UUID.findall(data))
+
+
+def sort_dict(data):
+    """Return dictionary sorted by key in lower case
+    """
+    return OrderedDict(sorted(data.items(), key=lambda pair: pair[0].lower()))
+
+
+class TagHandler(object):
+    """XML Tag handler
+    """
+
+    def __init__(self, tagname="", attrs=None):
+        self.tagname = tagname
+        self.attrs = attrs or {}
+
+    def start(self, tagname, attrs):
+        """On element start
+        """
+        self.tagname = tagname
+        self.attrs = attrs
+
+        self.register()
+
+    def end(self):
+        """On element end
+        """
+        self.unregister()
+
+    def child_start(self, tagname, attrs):
+        """Child element start
+        """
+        pass
+
+    def tag_end(self, tagname):
+        """On element or child end
+        """
+        if tagname == self.tagname:
+            self.end()
+
+        else:
+            self.child_end(tagname)
+
+    def child_end(self, tagname):
+        """Child element end
+        """
+        pass
+
+    def child_data(self, data):
+        """On element data
+        """
+        pass
+
+    @property
+    def parent(self):
+        """Returns element parent TagHandler object
+        """
+        return PARSER.tag_handlers[-2]
+
+    def register(self):
+        """Add tag handler to stack
+        """
+        PARSER.add_tag_handler_to_stack(self)
+        return self
+
+    def unregister(self):
+        """Remove tag handler from stack
+        """
+        PARSER.remove_tag_handler_from_stack()
+        return self
+
+    def __str__(self):
+        return "<%s>" % self.tagname
+
+
+class RootHandler(TagHandler):
+    """Root tag handler
+    """
+
+    def child_start(self, tagname, attrs):
+        """Waiting for child with Application tagname and initialize it
+        """
+        if tagname == "Application":
+            attrs["Name"] = "Application"
+            return ApplicationTagHandler().start(tagname, attrs)
+
+    @property
+    def parent(self):
+        """Root handler hasn't parent -> return none
+        """
+        return None
+
+    def __str__(self):
+        return "<root>"
+
+
+class InformationTagHandler(TagHandler):
+    """Information tag TagHandler
+    """
+
+    def __init__(self, *args, **kwargs):
+        super(InformationTagHandler, self).__init__(*args, **kwargs)
+
+        self.data = defaultdict(list)
+        self.current_tag = ""
+
+    def child_start(self, tagname, attrs):
+        self.current_tag = tagname
+
+    def child_data(self, data):
+        if self.current_tag:
+            self.data[self.current_tag].append(data)
+
+    def child_end(self, tagname):
+        if tagname == self.current_tag:
+            self.current_tag = ""
+
+    @print_block_end
+    def end(self):
+        global ACTION_EXT
+
+        # remove unnecessary symbols from data and encode it
+        for key, value in self.data.items():
+            self.data[key] = encode(clean_data("".join(value)))
+
+        # detect application programming language
+        ACTION_EXT = {
+            "python": ".py",
+            "vscript": ".vb"
+        }.get(self.data["ScriptingLanguage"].lower(), "python")
+
+        INFO("Sripts extention will be '*%s'", ACTION_EXT)
+        INFO("Completed: Application Information")
+
+        self.save()
+        super(InformationTagHandler, self).end()
+
+    def start(self, tagname, attrs):
+        super(InformationTagHandler, self).start(tagname, attrs)
+        INFO("Parsing: Application Information")
+
+    def save(self):
+        PARSER.write_json_file(constants.INFO_FILE, sort_dict(self.data))
+
+
+class BaseDRTagHandler(TagHandler):
+
+    FOLDER = ""
+    TAG = ""
+
+    def __init__(self, *args, **kwargs):
+        super(BaseDRTagHandler, self).__init__(*args, **kwargs)
+
+        self.current = None
+        PARSER.append_to_current_path(self.FOLDER)
+
+    def create_name(self, attrs):
+        return attrs["Name"]
+
+    def save_file(self):
+        pass
+
+    def create_new_file_handler(self, name):
+        raise NotImplementedError
+
+    def child_start(self, tagname, attrs):
+        if tagname == self.TAG:
+
+            name = self.create_name(attrs)
+            if not name:
+                return
+
+            self.current = {
+                "name": name
+            }
+
+            self.current["file"] = self.create_new_file_handler(
+                self.current["name"]
+            )
+
+    def child_data(self, data):
+        if self.current:
+            self.current["file"].write(encode(data))
+
+    def child_end(self, tagname):
+        if tagname == self.TAG and self.current:
+            self.save_file()
+            self.current = None
+
+    @print_block_end
+    def end(self):
+        PARSER.pop_from_current_path()
+        super(BaseDRTagHandler, self).end()
+
+
+class LibrariesTagHandler(BaseDRTagHandler):
+
+    FOLDER = constants.LIBRARIES_FOLDER
+    TAG = "Library"
+
+    def create_name(self, attrs):
+        if not check_by_regexps(attrs["Name"], IGNORE["Libraries"]):
+            return "{}{}".format(attrs["Name"], ACTION_EXT)
+
+        else:
+            DEBUG("Ignore: %s", attrs["Name"])
+            return ""
+
+    def save_file(self):
+        PARSER.write_file(
+            self.current["name"],
+            self.current["file"].getvalue()
+        )
+
+    def save_map(self):
+        pass
+
+    def create_new_file_handler(self, name):
+        return cStringIO.StringIO()
+
+    def end(self):
+        INFO("Completed: Libraries")
+        super(LibrariesTagHandler, self).end()
+
+    def start(self, tagname, attrs):
+        super(LibrariesTagHandler, self).start(tagname, attrs)
+        INFO("Parsing: Libraries")
+
+
+class ResourcesTagHandler(BaseDRTagHandler):
+
+    FOLDER = constants.RESOURCES_FOLDER
+    TAG = "Resource"
+
+    def create_name(self, attrs):
+        if not check_by_regexps(attrs["Name"], IGNORE["Resources"]):
+            RESOURCES[attrs["ID"]] = name = "{}_{}_{}".format(
+                attrs["ID"],
+                attrs["Type"] or "res",
+                attrs["Name"]
+            )
+            return name
+
+        else:
+            DEBUG("Ignore: %s", attrs["Name"])
+            return ""
+
+    def save_file(self):
+        PARSER.write_file(
+            self.current["name"],
+            base64.b64decode(self.current["file"].getvalue())
+        )
+
+    def create_new_file_handler(self, name):
+        return cStringIO.StringIO()
+
+    def end(self):
+        INFO("Completed: Resources")
+        super(ResourcesTagHandler, self).end()
+        self.update_pages_resources()
+
+    def start(self, tagname, attrs):
+        super(ResourcesTagHandler, self).start(tagname, attrs)
+        INFO("Parsing: Resources")
+
+    @print_block_end
+    def update_pages_resources(self):
+
+        INFO("Parsing: used resources for every page")
+
+        PARSER.append_to_current_path(constants.PAGES_FOLDER)
+
+        for page in PARSER.pages.values():
+
+            keys = list(set(RESOURCES.keys()) & set(page["guids"]))
+
+            PARSER.append_to_current_path(page["name"])
+
+            PARSER.write_json_file(
+                constants.RESOURCES_FILE,
+                sorted([RESOURCES[key] for key in keys])
+            )
+
+            PARSER.pop_from_current_path()
+
+        PARSER.pop_from_current_path()
+        INFO("Completed: used resources for every page")
+
+
+class DatabasesTagHandler(BaseDRTagHandler):
+
+    FOLDER = constants.DATABASES_FOLDER
+    TAG = "Database"
+
+    def create_name(self, attrs):
+        if not check_by_regexps(attrs["Name"], IGNORE["Databases"]):
+            return "{}_{}.{}".format(attrs["ID"], attrs["Name"], attrs["Type"])
+
+        else:
+            DEBUG("Ignore: %s", attrs["Name"])
+            return ""
+
+    def save_file(self):
+        PARSER.write_file(
+            self.current["name"],
+            base64.b64decode(self.current["file"].getvalue())
+        )
+
+    def create_new_file_handler(self, name):
+        return cStringIO.StringIO()
+
+    def end(self):
+        INFO("Completed: Databases")
+        super(DatabasesTagHandler, self).end()
+
+    def start(self, tagname, attrs):
+        super(DatabasesTagHandler, self).start(tagname, attrs)
+        INFO("Parsing: Databases")
+
+
+class PagesTagHandler(TagHandler):
+
+    FOLDER = constants.PAGES_FOLDER
+
+    def __init__(self, *args, **kwargs):
+        super(PagesTagHandler, self).__init__(*args, **kwargs)
+        PARSER.append_to_current_path(self.FOLDER)
+
+    def child_start(self, tagname, attrs):
+        if tagname == "Object":
+            ObjectTagHandler(tagname, attrs).register()
+            PARSER.pages[attrs["ID"]] = {
+                "id": attrs["ID"],
+                "name": attrs["Name"],
+                "events": [],
+                "actions": {},
+                "guids": []
+            }
+            PARSER.pages["current"] = attrs["ID"]
+
+    @print_block_end
+    def end(self):
+        super(PagesTagHandler, self).end()
+        PARSER.pop_from_current_path()
+        INFO("Completed: Pages")
+
+        if "current" in PARSER.pages:
+            del PARSER.pages["current"]
+
+    def start(self, tagname, attrs):
+        super(PagesTagHandler, self).start(tagname, attrs)
+        INFO("Parsing: Pages")
+
+
+class ActionsTagHandler(TagHandler):
+
+    def __init__(self, *args, **kwargs):
+        super(ActionsTagHandler, self).__init__(*args, **kwargs)
+
+        self.actions_map = {}
+        self.current_action = None
+        self.has_actions = False
+
+    def create_base_dir(self):
+        self.parent.create_dir()
+
+        PARSER.append_to_current_path(
+            "Actions-{}".format(self.parent.attrs["Name"])
+        )
+        try:
+            PARSER.create_folder_from_current_path()
+
+        except OSError:
+            ERROR("Folder already exists: %s",
+                  build_path(PARSER.current_path()))
+
+    def child_start(self, tagname, attrs):
+        if tagname == "Action":
+
+            if not self.has_actions:
+                self.create_base_dir()
+                self.has_actions = True
+
+            if self.parent.tagname.lower() == "application":
+                name = "{}_{}{}".format(attrs["ID"], attrs["Name"], ACTION_EXT)
+
+            else:
+                name = "{}{}".format(attrs["Name"], ACTION_EXT)
+
+            self.current_action = {
+                "file": cStringIO.StringIO(),
+                "name": name,
+                "attrs": sort_dict(attrs)
+            }
+
+    def child_data(self, data):
+        if self.current_action:
+            self.current_action["file"].write(encode(data))
+
+    def end(self):
+        super(ActionsTagHandler, self).end()
+        if self.has_actions:
+            self.save_actions_map()
+            PARSER.pop_from_current_path()
+
+        self.parent.is_actions_found = self.has_actions
+
+    def child_end(self, tagname):
+        if tagname == "Action":
+            self.save_action()
+            self.current_action = None
+
+    def save_action(self):
+        data = self.current_action["file"].getvalue()
+        detect_guids(data)
+
+        PARSER.write_file(
+            self.current_action["name"],
+            data
+        )
+
+        self.actions_map[self.current_action["name"]] = \
+            self.current_action["attrs"]
+
+    def save_actions_map(self):
+        PARSER.write_json_file(
+            constants.MAP_FILE,
+            sort_dict(self.actions_map)
+        )
+
+
+class ObjectTagHandler(TagHandler):
+
+    def __init__(self, *args, **kwargs):
+        super(ObjectTagHandler, self).__init__(*args, **kwargs)
+
+        self.is_actions_found = False
+        self.attributes = defaultdict(list)
+        self.current_attribute = None
+        self.has_folder = False
+
+    def create_dir(self):
+        if not self.has_folder:
+            PARSER.append_to_current_path(self.attrs["Name"])
+            PARSER.create_folder_from_current_path()
+            self.has_folder = True
+
+    def child_start(self, tagname, attrs):
+        if tagname == "Attribute":
+            self.current_attribute = attrs["Name"]
+
+        elif tagname == "Object":
+            if not self.has_folder:
+                self.create_dir()
+
+            ObjectTagHandler().start(tagname, attrs)
+
+        elif tagname == "Actions":
+            ActionsTagHandler().start(tagname, attrs)
+
+    def child_data(self, data):
+        if self.current_attribute:
+            self.attributes[self.current_attribute].append(data)
+
+    def child_end(self, tagname):
+        if tagname == "Attribute":
+            self.current_attribute = None
+
+    def end(self):
+        super(ObjectTagHandler, self).end()
+        self.save()
+
+    def save(self):
+        if self.has_folder or self.is_actions_found:
+            name = constants.INFO_FILE
+        else:
+            name = "{}.json".format(self.attrs["Name"])
+
+        self.attributes = {
+            key: encode(clean_data("".join(val)))
+            for (key, val) in self.attributes.items()
+        }
+
+        data = OrderedDict([
+            ("attrs", sort_dict(self.attrs)),
+            ("attributes", sort_dict(self.attributes))
+        ])
+
+        data = json.dumps(data)
+        detect_guids(data)
+
+        PARSER.write_file(name, data)
+
+        if self.has_folder or self.is_actions_found:
+            PARSER.pop_from_current_path()
+
+
+class E2vdomTagHandler(TagHandler):
+
+    def __init__(self, *args, **kwargs):
+        super(E2vdomTagHandler, self).__init__(*args, **kwargs)
+        self.current_mode = ""
+        self.current_node = None
+        self.is_data_allowed = False
+
+    def start(self, tagname, attrs):
+        super(E2vdomTagHandler, self).start(tagname, attrs)
+        INFO("Parsing: E2VDOM")
+
+    @print_block_end
+    def end(self):
+        super(E2vdomTagHandler, self).end()
+        self.save()
+        INFO("Completed: E2VDOM")
+
+    def child_start(self, tagname, attrs):
+        if tagname in ("Events", "Actions"):
+            self.current_mode = tagname
+
+        if self.current_mode == "Events" and tagname in ("Event", "Action"):
+            if tagname == "Event":
+                self.current_node = attrs
+                self.current_node["actions"] = []
+
+            elif tagname == "Action":
+                self.current_node["actions"].append(attrs["ID"])
+
+        elif self.current_mode == "Actions" and \
+                tagname in ("Action", "Parameter"):
+
+            if tagname == "Action":
+                self.current_node = attrs
+                self.current_node["Params"] = []
+
+            elif tagname == "Parameter":
+                self.current_node["Params"].append([attrs["ScriptName"], []])
+                self.is_data_allowed = True
+
+    def child_data(self, data):
+        if self.is_data_allowed:
+            self.current_node["Params"][-1][1].append(encode(data))
+
+    def child_end(self, tagname):
+
+        if self.current_mode == "Events" and tagname == "Event":
+            page = PARSER.pages.get(self.current_node["ContainerID"], "")
+
+            if page:
+                page["events"].append(sort_dict(self.current_node))
+                for action in self.current_node["actions"]:
+                    if not page["actions"].get(action, ""):
+                        page["actions"][action] = ""
+
+            self.current_node = ""
+
+        elif self.current_mode == "Events" and tagname == "Events":
+            self.current_mode = ""
+
+        elif self.current_mode == "Actions" and tagname == "Action":
+
+            if not self.current_node["Params"]:
+                del self.current_node["Params"]
+
+            for page in PARSER.pages.values():
+                if self.current_node["ID"] in page["actions"]:
+                    page["actions"][self.current_node["ID"]] = \
+                        sort_dict(self.current_node)
+
+                    break
+
+            self.current_node = ""
+
+        elif self.current_mode == "Actions" and tagname == "Actions":
+            self.current_mode = ""
+
+        elif self.current_mode == "Actions" and tagname == "Parameter":
+            self.is_data_allowed = False
+            self.current_node["Params"][-1][1] = \
+                clean_data("".join(self.current_node["Params"][-1][1]))
+
+    def save(self):
+        PARSER.append_to_current_path(constants.PAGES_FOLDER)
+
+        for page in PARSER.pages.values():
+            PARSER.pages["current"] = page["id"]
+
+            actions = sorted(page["actions"].items())
+            actions = [act[1] for act in actions if act[1]]
+
+            data = json.dumps(
+                OrderedDict([
+                    ("actions", actions),
+                    ("events", page["events"]),
+                ])
+            )
+
+            detect_guids(data)
+
+            PARSER.append_to_current_path(page["name"])
+            PARSER.write_file(
+                constants.E2VDOM_FILE,
+                data
+            )
+
+            PARSER.pop_from_current_path()
+
+        PARSER.pop_from_current_path()
+
+        if "current" in PARSER.pages:
+            del PARSER.pages["current"]
+
+
+class SecurityTagHandler(TagHandler):
+
+    def __init__(self, *args, **kwargs):
+        super(SecurityTagHandler, self).__init__(*args, **kwargs)
+
+        self.groups_and_users = OrderedDict([
+            ("groups", []),
+            ("users", [])
+        ])
+
+        self.current_mode = ""
+        self.current_node = None
+        self.is_data_allowed = False
+        self.ldapf = None
+
+        PARSER.append_to_current_path(constants.SECURITY_FOLDER)
+
+    def start(self, tagname, attrs):
+        super(SecurityTagHandler, self).start(tagname, attrs)
+        INFO("Parsing: Security")
+
+    @print_block_end
+    def end(self):
+        super(SecurityTagHandler, self).end()
+        self.save()
+        INFO("Completed: Security")
+
+    def child_start(self, tagname, attrs):
+        if tagname in ("Groups", "Users", "LDAP"):
+            self.current_mode = tagname
+
+        if self.current_mode == "Users":
+            if tagname == "User":
+                self.current_node = []
+
+            elif tagname in ("Login", "Password", "FirstName",
+                             "LastName", "Email", "SecurityLevel",
+                             "MemberOf"):
+
+                self.current_node.append([tagname, []])
+                self.is_data_allowed = True
+
+            elif tagname == "Rights":
+                self.current_node.append([tagname, []])
+
+            elif tagname == "Right":
+                self.current_node[-1][1].append(sort_dict(attrs))
+
+        elif self.current_mode == "LDAP":
+            self.ldapf = cStringIO.StringIO()
+            self.is_data_allowed = True
+
+        elif self.current_mode == "Groups":
+            ERROR("Group are unsupported")
+
+    def child_data(self, data):
+        if self.is_data_allowed:
+            if self.current_mode == "Users":
+                self.current_node[-1][1].append(encode(data))
+
+            elif self.current_mode == "LDAP":
+                self.ldapf.write(data)
+
+            elif self.current_mode == "Groups":
+                ERROR("Group are unsupported")
+
+    def child_end(self, tagname):
+        if self.current_mode == "Users":
+            if tagname == "Users":
+                self.current_mode = ""
+                self.current_node = None
+
+            elif tagname == "User":
+
+                user = dict(self.current_node)
+                if user.get("Rights", None):
+                    user["Rights"].sort(key=lambda right: right["Target"])
+
+                else:
+                    del user["Rights"]
+
+                self.groups_and_users["users"].append(sort_dict(user))
+
+            elif tagname in ("Login", "Password", "FirstName",
+                             "LastName", "Email", "SecurityLevel",
+                             "MemberOf"):
+
+                self.is_data_allowed = False
+                self.current_node[-1][1] = "".join(self.current_node[-1][1])
+
+        elif self.current_mode == "Groups":
+            ERROR("Group are unsupported")
+
+    def save(self):
+        self.groups_and_users["users"].sort(key=lambda user: user["Login"])
+
+        PARSER.write_json_file(
+            constants.USERS_GROUPS_FILE,
+            self.groups_and_users
+        )
+
+        if self.ldapf:
+            PARSER.write_file(
+                constants.LDAP_LDIF,
+                base64.b64decode(self.ldapf.getvalue())
+            )
+
+
+class StructureTagHandler(TagHandler):
+
+    def __init__(self, *args, **kwargs):
+        super(StructureTagHandler, self).__init__(*args, **kwargs)
+        self.structure = []
+
+    def start(self, tagname, attrs):
+        super(StructureTagHandler, self).start(tagname, attrs)
+        INFO("Parsing: Structure")
+
+    @print_block_end
+    def end(self):
+        super(StructureTagHandler, self).end()
+        # self.save()
+        INFO("Completed: Structure")
+
+    def child_start(self, tagname, attrs):
+        if tagname == "Object":
+            self.structure.append(sort_dict(attrs))
+
+    def save(self):
+        PARSER.write_json_file(constants.STRUCT_FILE, self.structure)
+
+
+class ApplicationTagHandler(TagHandler):
+
+    def create_dir(self):
+        pass
+
+    def child_start(self, tagname, attrs):
+        tag_handlers_map = {
+            "Information": InformationTagHandler,
+            "Libraries": LibrariesTagHandler,
+            "Resources": ResourcesTagHandler,
+            "Databases": DatabasesTagHandler,
+            "Objects": PagesTagHandler,
+            "Actions": ActionsTagHandler,
+            "E2vdom": E2vdomTagHandler,
+            "Structure": StructureTagHandler,
+            "Security": SecurityTagHandler,
+        }
+
+        handler_cls = tag_handlers_map.get(tagname, None)
+        if handler_cls:
+            handler_cls().start(tagname, attrs)
+
+        else:
+            DEBUG("%s found unhandled tag '%s'", self.tagname, tagname)
+
+
+class Parser(object):
+    """VDOM Application XML parser class
+    """
+
+    def __init__(self):
+        self.target_folder = None
+        self._handlers_stack = []
+        self._current_path = []
+        self.pages = {}
+
+    def create_folder_from_current_path(self):
+        """Create folder using current path
+        """
+        os.makedirs(self.current_path())
+
+    def current_path(self):
+        """Return current path string
+        """
+        return build_path(*self._current_path)
+
+    def append_to_current_path(self, path):
+        """Append new path to current
+        """
+        self._current_path.append(path)
+
+    def pop_from_current_path(self):
+        """Go to higher level in
+        """
+        return self._current_path.pop()
+
+    def write_file(self, name, data):
+        """Write data to file
+        """
+        path = build_path(self.current_path(), name)
+
+        DEBUG("Writing data to %s", path)
+
+        with open_file(path, "wb") as hdlr:
+            hdlr.write(data)
+
+    def write_json_file(self, name, data):
+        """Convert data to JSON and
+            write it to file
+        """
+        path = build_path(self.current_path(), name)
+
+        DEBUG("Writing JSON data to %s", path)
+
+        with open_file(path, "wb") as hdlr:
+            json_dump(data, hdlr, critical=True)
+
+    @property
+    def current_handler(self):
+        """Return tag handler which is active
+        """
+        return self.tag_handlers[-1]
+
+    @property
+    def tag_handlers(self):
+        """Return tag handlers stack
+        """
+        return self._handlers_stack
+
+    def add_tag_handler_to_stack(self, handler):
+        """Add tag handler to stack
+        """
+        self.tag_handlers.append(handler)
+
+    def remove_tag_handler_from_stack(self):
+        """Remove tag handler from stack
+        """
+        self.tag_handlers.pop()
+
+    def start_element(self, tagname, attrs):
+        """New element found
+        """
+        self.current_handler.child_start(tagname, attrs)
+
+    def end_element(self, tagname):
+        """Element closed
+        """
+        self.current_handler.tag_end(tagname)
+
+    def char_data(self, data):
+        """Element data
+        """
+        self.current_handler.child_data(data)
+
+    def parse(self, source, target):
+        """Setup logging and start main process
+        """
+        self.target_folder = target
+        self.append_to_current_path(self.target_folder)
+
+        RootHandler().register()
+
+        expat = xml.parsers.expat.ParserCreate()
+        expat.StartElementHandler = self.start_element
+        expat.EndElementHandler = self.end_element
+        expat.CharacterDataHandler = self.char_data
+        expat.ParseFile(source)
+
+
+@print_block_end
+def create_basic_structure(config):
+    """Create basic folders
+    """
+    DEBUG("Creating basic structure")
+
+    root = config["target"]["path"] = create_folder(**config["target"])
+    for folder in constants.BASE_FOLDERS:
+        create_folder(os.path.join(root, folder))
+
+    INFO("Basic structure successfully created")
+
+
+def parse_app(config):
+    """VDOM Application XML parser initialization
+        and start parsing process
+    """
+    global PARSER
+
+    DEBUG("Initialize VDOM Application XML parser")
+    PARSER = Parser()
+
+    INFO("Parsing started...")
+    PARSER.parse(config["source"], config["target"]["path"])
+
+    INFO("Completed!")
+
+
+def parse_ignore_file(config):
+    """Convert strings to regexps
+    """
+    global IGNORE
+
+    if not config["ignore"]:
+        config["ignore"] = {}
+
+    if not isinstance(config["ignore"], dict):
+        ERROR("Ignore settings must be dict")
+        emergency_exit()
+
+    keys = ["Resources", "Libraries",
+            "Databases", "Actions"]
+
+    for key in keys:
+        data = config["ignore"].get(key, [])
+        if not isinstance(data, (list, tuple)):
+            data = (data,)
+
+        config["ignore"][key] = convert_to_regexp(data)
+
+    IGNORE = config["ignore"]
+
+
+def parse(config):
+    """Call copy functions in cycle
+    """
+    parse_ignore_file(config)
+    create_basic_structure(config)
+    parse_app(config)
 
 
 def main():
     """Main function
     """
     args_parser = argparse.ArgumentParser()
-    args_parser.add_argument(
-        "src",
-        help="path to source XML file",
-        type=str
-    )
-    args_parser.add_argument(
-        "dst",
-        help="path to destination folder",
-        type=str
-    )
-    args_parser.add_argument(
-        "-v",
-        "--verbose",
-        help="increase output verbosity",
-        action="store_true",
-        default=False,
-    )
+
+    args_parser.add_argument("source", type=argparse.FileType("rb"),
+                             help="application XML file")
+
+    args_parser.add_argument("target", type=str,
+                             help="target folder")
+
+    args_parser.add_argument("-v", "--verbosity", action="count",
+                             help="be more verbose",
+                             default=0)
+
+    args_parser.add_argument("-e", "--erase", action="store_true",
+                             help="erase target folder")
+
+    args_parser.add_argument("-q", "--quiet", action="store_true",
+                             help="no user interaction")
+
+    args_parser.add_argument("-i", "--ignore-cfg",
+                             type=argparse.FileType("rb"),
+                             help="ignore config file")
 
     args = args_parser.parse_args()
 
-    vdom_pr = vdom_parser.create()
+    # Setup logging system and show necessary messages
+    log_level = logging.INFO if not args.verbosity else logging.DEBUG
+    show_module_name = args.verbosity > 1
 
-    vdom_pr.src = args.src
-    vdom_pr.dst = args.dst
-    vdom_pr.debug = args.verbose
+    setup_logging(log_level, module_name=show_module_name)
 
-    vdom_pr.start()
+    INFO("")
+    INFO("Information logging turned on")
+    DEBUG("Debug logging turned on")
+    INFO("")
+    INFO(BLOCK_END)
+    INFO("")
+
+    ignore = args.ignore_cfg
+    if ignore:
+        INFO("Parsing: 'ignore' configuration file")
+        ignore = json_load(ignore, critical=True)
+        INFO("Done: 'ignore' configuration file")
+
+    config = {
+        "target": {
+            "path": args.target,
+            "erase": args.erase,
+            "quiet": args.quiet,
+        },
+        "source": args.source,
+        "ignore": ignore
+    }
+
+    # Main process starting
+    parse(config)
+
+    INFO("\nPath to application:\n{}".format(config["target"]["path"]))
 
 
 if __name__ == "__main__":
+    check_python_version()
     main()
-    sys.exit(0)
+    script_exit()

@@ -15,11 +15,15 @@ import constants
 from helpers import setup_logging, DEBUG, INFO, ERROR, \
     check_python_version, script_exit, \
     create_folder, uuid as gen_guid, json_load, \
-    open_file as fopen, json_dump
+    open_file as fopen, json_dump, \
+    convert_to_regexp, check_by_regexps
 
 
 RE_RES_UUID = re.compile("[0-F]{8}-[0-F]{4}-[0-F]{4}-[0-F]{4}-[0-F]{12}", re.I)
 RE_OBJ_UUID = re.compile("[0-F]{8}[-_][0-F]{4}[-_][0-F]{4}[-_][0-F]{4}[-_][0-F]{12}", re.I)
+
+
+GUIDS_TO_REPLACE = {}
 
 
 def re_res_sub(resources):
@@ -119,14 +123,15 @@ def copy_files(target, sources, config):
     if not isinstance(sources, (list, tuple)):
         sources = (sources,)
 
+    copied_files = []
+
     for source in sources:
 
         path = ""
         params = {
             "rename": None,
             "exclude": None,
-            "include": None,
-            "regexp": None
+            "include": None
         }
 
         # it can be single file or folder
@@ -140,15 +145,11 @@ def copy_files(target, sources, config):
                 if val and not isinstance(val, (list, tuple, dict)):
                     params[param] = (val,)
 
-            if params["regexp"]:
-                compiled = []
-                for pattern in params["regexp"]:
-                    try:
-                        compiled.append(re.compile(pattern, re.I))
-                    except Exception:
-                        ERROR("Invalid pattern: {}".format(pattern))
+            if params["exclude"]:
+                params["exclude"] = convert_to_regexp(params["exclude"])
 
-                params["regexp"] = compiled
+            if params["include"]:
+                params["include"] = convert_to_regexp(params["include"])
 
         # it can be single file or folder
         # without additional params
@@ -161,29 +162,23 @@ def copy_files(target, sources, config):
 
         # else split @path to parent path and file name
         else:
-            path, name = os.path.split(path)
+            path, name = os.path.split(path.rstrip("\/"))
             files = (name,)
 
         for name in files:
 
+            source_path = os.path.join(path, name)
+            if os.path.isdir(source_path):
+                DEBUG("Directories are not supported: {}".format(source_path))
+                continue
+
             # if file in exclude list - continue
-            if params["exclude"] and name in params["exclude"]:
+            if params["exclude"] and check_by_regexps(name, params["exclude"]):
                 continue
 
             # if file not in include list - continue
-            if params["include"] and name not in params["include"]:
+            if params["include"] and not check_by_regexps(name, params["include"]):
                 continue
-
-            # check regexps
-            if params["regexp"]:
-                matched = False
-                for regexp in params["regexp"]:
-                    if regexp.match(name):
-                        matched = True
-                        break
-
-                if not matched:
-                    continue
 
             # if file in rename list - rename it, else use source name
             if params["rename"] and \
@@ -198,15 +193,17 @@ def copy_files(target, sources, config):
             else:
                 new_name = name
 
-            source_path = os.path.join(path, name)
             target_path = os.path.join(target, new_name)
 
             if os.path.exists(source_path):
                 DEBUG("Copy '%s' to '%s'", source_path, target_path)
                 shutil.copy2(source_path, target_path)
+                copied_files.append(new_name)
 
             else:
                 ERROR("No such file or directory: '{}'".format(source_path))
+
+    return copied_files
 
 
 def copy_resources(config):
@@ -224,51 +221,45 @@ def copy_resources(config):
 
     DEBUG("Copy resources")
 
-    copy_files(target_path, config["Resources"], config)
+    sources = config["Resources"]
+    if not isinstance(sources, (list, tuple)):
+        sources = (sources,)
 
-    resources_map = {}
-    guids_map = {}
+    for source in sources:
 
-    for old_name in os.listdir(target_path):
+        files = copy_files(target_path, source, config)
 
-        # split name to GUID and name
-        raw_name = old_name.split("_", 1)
+        change_guids = False
+        if isinstance(source, dict):
+            change_guids = bool(source.get("generateGUIDs", False))
 
-        if len(raw_name) == 1:
-            guid, name = gen_guid(), raw_name[0]
+        if not change_guids:
+            continue
 
-        else:
+        for old_name in files:
+
+            raw_name = old_name.split("_", 2)
+
             try:
-                UUID(raw_name[0])
+                res_guid = UUID(raw_name[0])
 
             except ValueError:
-                guid, name = gen_guid(), old_name
+                res_guid = gen_guid()
+                res_type = res_name.rsplit(".", 1)
+                res_type = res_type[1] if len(res_type) == 2 else "res"
 
             else:
-                guid, name = raw_name
+                res_type = raw_name[1]
+                res_name = raw_name[2]
 
-        new_guid = guids_map[guid] = gen_guid()
-        new_name = "{}_{}".format(new_guid, name)
+            new_guid = GUIDS_TO_REPLACE[res_guid] = gen_guid()
+            new_name = "{}_{}_{}".format(new_guid, res_type, res_name)
 
-        res_type = name.rsplit(".", 1)
-        res_type = "res" if len(res_type) == 1 else res_type[1]
+            old_path = os.path.join(target_path, old_name)
+            new_path = os.path.join(target_path, new_name)
 
-        resources_map[new_name] = {
-            "Type": res_type,
-            "ID": new_guid,
-            "Name": name
-        }
-
-        old_path = os.path.join(target_path, old_name)
-        new_path = os.path.join(target_path, new_name)
-
-        DEBUG("Move '%s' to '%s'", old_path, new_path)
-        shutil.move(old_path, new_path)
-
-    with fopen(os.path.join(target_path, constants.MAP_FILE), "wb") as hdlr:
-        json_dump(resources_map, hdlr)
-
-    config["Resources"] = guids_map
+            DEBUG("Move '%s' to '%s'", old_path, new_path)
+            shutil.move(old_path, new_path)
 
     INFO("Resources were copied successfully")
 
@@ -350,23 +341,6 @@ def copy_databases(config):
 
     copy_files(target_path, config["Databases"], config)
 
-    databases_map = {}
-
-    for old_name in os.listdir(target_path):
-
-        # split name to GUID and name
-        raw_name = old_name.split(".", 1)
-        name, ext = raw_name if len(raw_name) == 2 else (raw_name[0], "sqlite")
-
-        databases_map[old_name] = {
-            "Type": ext,
-            "ID": gen_guid(),
-            "Name": name
-        }
-
-    with fopen(os.path.join(target_path, constants.MAP_FILE), "wb") as hdlr:
-        json_dump(databases_map, hdlr)
-
     INFO("Databases were copied successfully")
 
 
@@ -387,7 +361,34 @@ def copy_pages(config):
     if not isinstance(pages, (list, tuple)):
         pages = (pages,)
 
+    new_pages = []
     for page in pages:
+        if isinstance(page, (str, unicode)):
+            page = {
+                "path": page
+            }
+
+        if not page["path"].rstrip("\/").lower().endswith("pages"):
+            new_pages.append(page)
+
+        else:
+            page["path"] = normalize_path(page["path"], config)
+            if not os.path.exists(page["path"]):
+                ERROR("No such directory: '%s'", page["path"])
+                continue
+
+            for folder in os.listdir(page["path"]):
+                folder_path = os.path.join(page["path"], folder)
+
+                if not os.path.isdir(folder_path):
+                    ERROR("Page can't be file: %s", folder_path)
+                    continue
+
+                new_page = page.copy()
+                new_page["path"] = folder_path
+                new_pages.append(new_page)
+
+    for page in new_pages:
 
         if isinstance(page, (str, unicode)):
             page = {
@@ -402,7 +403,7 @@ def copy_pages(config):
 
         # if name not defined - got it from folder name
         if not page.get("name", ""):
-            page["name"] = os.path.split(page["path"])[1]
+            page["name"] = os.path.split(page["path"].rstrip("\/"))[1]
             page["rename"] = False
 
         copy_path = os.path.join(target_path, page["name"])
@@ -452,7 +453,7 @@ def copy_pages(config):
         for current, subfolder, files in os.walk(copy_path):
 
             # objects files at first, then python files
-            for node in sorted(files, key=lambda f: os.path.splitext(f)[1]):
+            for node in sorted(files, key=lambda f: os.path.splitext(f.rstrip("\/"))[1]):
 
                 node_path = os.path.join(current, node)
                 with open(node_path, "rb") as src:
@@ -460,8 +461,6 @@ def copy_pages(config):
 
                 with open(node_path, "wb") as dst:
                     dst.write(regexp.sub(sub_func, data))
-
-    INFO("Pages were copied successfully")
 
         # if page.get("rename", True):
         #     info_path = os.path.join(copy_path, constants.INFO_FILE)
@@ -502,7 +501,9 @@ def copy_pages(config):
 
         #         with open(node_path, "wb") as dst:
         #             dst.write(regexp.sub(partial(sub_func,
-            # create_new=create_new_guid), data))
+        #     create_new=create_new_guid), data))
+
+    INFO("Pages were copied successfully")
 
 
 def create_application_info_file(config):
