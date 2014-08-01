@@ -280,7 +280,7 @@ def check_by_regexps(data, regexp_list):
     """Check data using regexp
     """
     for regexp in regexp_list:
-        if regexp.match(data):
+        if regexp.search(data):
             return True
 
     else:

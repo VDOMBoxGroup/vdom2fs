@@ -190,7 +190,15 @@ class InformationTagHandler(TagHandler):
         INFO("Parsing: Application Information")
 
     def save(self):
-        PARSER.write_json_file(constants.INFO_FILE, sort_dict(self.data))
+        if not (PARSER.config["parse_all"] or
+                PARSER.config["parse"]["info"]):
+
+            return
+
+        PARSER.write_json_file(
+            constants.INFO_FILE,
+            sort_dict(self.data)
+        )
 
 
 class BaseDRTagHandler(TagHandler):
@@ -253,10 +261,15 @@ class LibrariesTagHandler(BaseDRTagHandler):
             return "{}{}".format(attrs["Name"], ACTION_EXT)
 
         else:
-            DEBUG("Ignore: %s", attrs["Name"])
+            DEBUG("Ignore library: %s", attrs["Name"])
             return ""
 
     def save_file(self):
+        if not (PARSER.config["parse_all"] or
+                PARSER.config["parse"]["libraries"]):
+
+            return
+
         PARSER.write_file(
             self.current["name"],
             self.current["file"].getvalue()
@@ -292,10 +305,15 @@ class ResourcesTagHandler(BaseDRTagHandler):
             return name
 
         else:
-            DEBUG("Ignore: %s", attrs["Name"])
+            DEBUG("Ignore resource: %s", attrs["Name"])
             return ""
 
     def save_file(self):
+        if not (PARSER.config["parse_all"] or
+                PARSER.config["parse"]["resources"]):
+
+            return
+
         PARSER.write_file(
             self.current["name"],
             base64.b64decode(self.current["file"].getvalue())
@@ -315,6 +333,11 @@ class ResourcesTagHandler(BaseDRTagHandler):
 
     @print_block_end
     def update_pages_resources(self):
+
+        if not (PARSER.config["parse_all"] or
+                PARSER.config["parse"]["pages"]):
+
+            return
 
         INFO("Parsing: used resources for every page")
 
@@ -347,10 +370,15 @@ class DatabasesTagHandler(BaseDRTagHandler):
             return "{}_{}.{}".format(attrs["ID"], attrs["Name"], attrs["Type"])
 
         else:
-            DEBUG("Ignore: %s", attrs["Name"])
+            DEBUG("Ignore database: %s", attrs["Name"])
             return ""
 
     def save_file(self):
+        if not (PARSER.config["parse_all"] or
+                PARSER.config["parse"]["databases"]):
+
+            return
+
         PARSER.write_file(
             self.current["name"],
             base64.b64decode(self.current["file"].getvalue())
@@ -368,6 +396,13 @@ class DatabasesTagHandler(BaseDRTagHandler):
         INFO("Parsing: Databases")
 
 
+class DummyObjectTagHandler(TagHandler):
+
+    def child_start(self, tagname, attrs):
+        if tagname == "Object":
+            DummyObjectTagHandler().start(tagname, attrs)
+
+
 class PagesTagHandler(TagHandler):
 
     FOLDER = constants.PAGES_FOLDER
@@ -378,15 +413,27 @@ class PagesTagHandler(TagHandler):
 
     def child_start(self, tagname, attrs):
         if tagname == "Object":
-            ObjectTagHandler(tagname, attrs).register()
-            PARSER.pages[attrs["ID"]] = {
-                "id": attrs["ID"],
-                "name": attrs["Name"],
-                "events": [],
-                "actions": {},
-                "guids": []
-            }
-            PARSER.pages["current"] = attrs["ID"]
+
+            cls = DummyObjectTagHandler
+            if PARSER.config["parse_all"] or \
+                    PARSER.config["parse"]["pages"]:
+
+                if not check_by_regexps(attrs["Name"], IGNORE["Pages"]):
+                    cls = PageTagHandler
+
+                    PARSER.pages[attrs["ID"]] = {
+                        "id": attrs["ID"],
+                        "name": attrs["Name"],
+                        "events": [],
+                        "actions": {},
+                        "guids": []
+                    }
+                    PARSER.pages["current"] = attrs["ID"]
+
+                else:
+                    DEBUG("Ignore page: %s", attrs["Name"])
+
+            cls(tagname, attrs).register()
 
     @print_block_end
     def end(self):
@@ -545,6 +592,13 @@ class ObjectTagHandler(TagHandler):
             PARSER.pop_from_current_path()
 
 
+class PageTagHandler(ObjectTagHandler):
+
+    def end(self):
+        super(PageTagHandler, self).end()
+        INFO("Page '%s' saved!", self.attrs["Name"])
+
+
 class E2vdomTagHandler(TagHandler):
 
     def __init__(self, *args, **kwargs):
@@ -629,6 +683,12 @@ class E2vdomTagHandler(TagHandler):
                 clean_data("".join(self.current_node["Params"][-1][1]))
 
     def save(self):
+
+        if not (PARSER.config["parse_all"] or
+                PARSER.config["parse"]["e2vdom"]):
+
+            return
+
         PARSER.append_to_current_path(constants.PAGES_FOLDER)
 
         for page in PARSER.pages.values():
@@ -754,6 +814,12 @@ class SecurityTagHandler(TagHandler):
             ERROR("Group are unsupported")
 
     def save(self):
+
+        if not (PARSER.config["parse_all"] or
+                PARSER.config["parse"]["security"]):
+
+            return
+
         self.groups_and_users["users"].sort(key=lambda user: user["Login"])
 
         PARSER.write_json_file(
@@ -789,6 +855,11 @@ class StructureTagHandler(TagHandler):
             self.structure.append(sort_dict(attrs))
 
     def save(self):
+        if not (PARSER.config["parse_all"] or
+                PARSER.config["parse"]["structure"]):
+
+            return
+
         PARSER.write_json_file(constants.STRUCT_FILE, self.structure)
 
 
@@ -804,11 +875,15 @@ class ApplicationTagHandler(TagHandler):
             "Resources": ResourcesTagHandler,
             "Databases": DatabasesTagHandler,
             "Objects": PagesTagHandler,
-            "Actions": ActionsTagHandler,
             "E2vdom": E2vdomTagHandler,
             "Structure": StructureTagHandler,
             "Security": SecurityTagHandler,
         }
+
+        if PARSER.config["parse_all"] or \
+                PARSER.config["parse"]["app_actions"]:
+
+            tag_handlers_map["Actions"] = ActionsTagHandler
 
         handler_cls = tag_handlers_map.get(tagname, None)
         if handler_cls:
@@ -823,6 +898,7 @@ class Parser(object):
     """
 
     def __init__(self):
+        self.config = None
         self.target_folder = None
         self._handlers_stack = []
         self._current_path = []
@@ -906,9 +982,10 @@ class Parser(object):
         """
         self.current_handler.child_data(data)
 
-    def parse(self, source, target):
+    def parse(self, source, target, config):
         """Setup logging and start main process
         """
+        self.config = config
         self.target_folder = target
         self.append_to_current_path(self.target_folder)
 
@@ -928,8 +1005,29 @@ def create_basic_structure(config):
     DEBUG("Creating basic structure")
 
     root = config["target"]["path"] = create_folder(**config["target"])
-    for folder in constants.BASE_FOLDERS:
-        create_folder(os.path.join(root, folder))
+
+    if config["parse_all"]:
+        for folder in constants.BASE_FOLDERS:
+            create_folder(os.path.join(root, folder))
+
+    else:
+        if config["parse"]["databases"]:
+            create_folder(os.path.join(root, constants.DATABASES_FOLDER))
+
+        if config["parse"]["libraries"]:
+            create_folder(os.path.join(root, constants.LIBRARIES_FOLDER))
+
+        if config["parse"]["pages"]:
+            create_folder(os.path.join(root, constants.PAGES_FOLDER))
+
+        if config["parse"]["resources"]:
+            create_folder(os.path.join(root, constants.RESOURCES_FOLDER))
+
+        if config["parse"]["security"]:
+            create_folder(os.path.join(root, constants.SECURITY_FOLDER))
+
+        if config["parse"]["app_actions"]:
+            create_folder(os.path.join(root, constants.APP_ACTIONS_FOLDER))
 
     INFO("Basic structure successfully created")
 
@@ -944,7 +1042,7 @@ def parse_app(config):
     PARSER = Parser()
 
     INFO("Parsing started...")
-    PARSER.parse(config["source"], config["target"]["path"])
+    PARSER.parse(config["source"], config["target"]["path"], config)
 
     INFO("Completed!")
 
@@ -962,7 +1060,7 @@ def parse_ignore_file(config):
         emergency_exit()
 
     keys = ["Resources", "Libraries",
-            "Databases", "Actions"]
+            "Databases", "Actions", "Pages"]
 
     for key in keys:
         data = config["ignore"].get(key, [])
@@ -1007,6 +1105,42 @@ def main():
                              type=argparse.FileType("rb"),
                              help="ignore config file")
 
+    args_parser.add_argument("-l", "--libraries",
+                             action="store_true",
+                             help="parse libraries")
+
+    args_parser.add_argument("-p", "--pages",
+                             action="store_true",
+                             help="parse pages")
+
+    args_parser.add_argument("-d", "--databases",
+                             action="store_true",
+                             help="parse databases")
+
+    args_parser.add_argument("-r", "--resources",
+                             action="store_true",
+                             help="parse resources")
+
+    args_parser.add_argument("--info",
+                             action="store_true",
+                             help="parse information")
+
+    args_parser.add_argument("-s", "--security",
+                             action="store_true",
+                             help="parse security")
+
+    args_parser.add_argument("--structure",
+                             action="store_true",
+                             help="parse structure")
+
+    args_parser.add_argument("--e2vdom",
+                             action="store_true",
+                             help="parse e2vdom")
+
+    args_parser.add_argument("--app-actions",
+                             action="store_true",
+                             help="parse application actions")
+
     args = args_parser.parse_args()
 
     # Setup logging system and show necessary messages
@@ -1035,8 +1169,25 @@ def main():
             "quiet": args.quiet,
         },
         "source": args.source,
-        "ignore": ignore
+        "ignore": ignore,
+        "parse": {
+            "app_actions": args.app_actions,
+            "e2vdom": args.e2vdom,
+            "structure": args.structure,
+            "security": args.security,
+            "info": args.info,
+            "resources": args.resources,
+            "databases": args.databases,
+            "pages": args.pages,
+            "libraries": args.libraries
+        },
     }
+
+    parse_all = False
+    for val in config["parse"].values():
+        parse_all = parse_all or val
+
+    config["parse_all"] = not parse_all
 
     # Main process starting
     parse(config)
