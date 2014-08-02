@@ -267,7 +267,6 @@ def convert_to_regexp(patterns):
     regexp_list = []
     for pattern in patterns:
         try:
-            print pattern
             regexp_list.append(re.compile(pattern, re.I))
         except Exception:
             ERROR("Invalid pattern: %s", pattern)
