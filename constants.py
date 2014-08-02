@@ -10,9 +10,11 @@ RESOURCES_FOLDER = "Resources"
 SECURITY_FOLDER = "Security"
 GIT_FOLDER = ".git"
 SVN_FOLDER = ".svn"
+OS_X_FOLDER = ".DS_Store"
 
 E2VDOM_FILE = "__e2vdom__.json"
 INFO_FILE = "__info__.json"
+LIBRARIES_FILE = "__libraries__.json"
 LDAP_LDIF = "__ldap__.ldif"
 MAP_FILE = "__map__.json"
 RESOURCES_FILE = "__resources__.json"
@@ -43,4 +45,6 @@ RESERVED_NAMES = (
     USERS_GROUPS_FILE,
     SVN_FOLDER,
     GIT_FOLDER,
+    LIBRARIES_FILE,
+    OS_X_FOLDER
 )

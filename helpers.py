@@ -201,18 +201,21 @@ def create_folder(path, erase=False, quiet=False):
 
     # Well, erase == False or folder can't be erased
     if not quiet:
-        answ = raw_input(("Type (E) to erase existing folder, "
-                          "type (Q) to exit the script "
-                          "or enter new folder name: ")).lower()
+        answ = ''
 
-        if answ == "e":
-            return create_folder(path, erase=True, quiet=quiet)
+        while not answ:
+            answ = raw_input(("Type (E) to erase existing folder, "
+                              "type (Q) to exit the script "
+                              "or enter new folder name: ")).lower()
 
-        elif answ == "q":
-            script_exit()
+            if answ == "e":
+                return create_folder(path, erase=True, quiet=quiet)
 
-        else:
-            return create_folder(answ, erase=False, quiet=quiet)
+            elif answ == "q":
+                script_exit()
+
+            elif answ:
+                return create_folder(answ, erase=False, quiet=quiet)
 
     else:
         return create_folder(find_unic_path(path), erase=erase, quiet=quiet)

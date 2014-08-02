@@ -155,11 +155,11 @@ def write_libraries(config):
 
     write_xml("Libraries", indent=2)
 
-    for lib_name in sorted(os.listdir(libs_path)):
+    files = list(set(os.listdir(libs_path)) - set(constants.RESERVED_NAMES))
+    for lib_name in sorted(files):
         lib_path = os.path.join(libs_path, lib_name)
 
         if not os.path.isfile(lib_path):
-
             continue
 
         DEBUG("Open file: %s", lib_path)
@@ -188,7 +188,8 @@ def write_resources(config):
 
     write_xml("Resources", indent=2)
 
-    for res_name in sorted(os.listdir(resources_path)):
+    files = list(set(os.listdir(resources_path)) - set(constants.RESERVED_NAMES))
+    for res_name in sorted(files):
         res_path = os.path.join(resources_path, res_name)
 
         if not os.path.isfile(res_path):
@@ -239,7 +240,8 @@ def write_databases(config):
 
     write_xml("Databases", indent=2)
 
-    for db_name in sorted(os.listdir(dbs_path)):
+    files = list(set(os.listdir(dbs_path)) - set(constants.RESERVED_NAMES))
+    for db_name in sorted(files):
         db_path = os.path.join(dbs_path, db_name)
 
         if not os.path.isfile(db_path):
@@ -418,11 +420,9 @@ def walk(path, name, indent):
     write_actions(os.path.join(new_path, actions_folder), indent+2)
     write_xml("Objects", indent=indent+2)
 
-    for name in sorted(os.listdir(new_path)):
-        if name in constants.RESERVED_NAMES or name == actions_folder:
-            continue
-
-        elif os.path.isdir(os.path.join(new_path, name)):
+    nodes = list(set(os.listdir(new_path)) - set(constants.RESERVED_NAMES) - {actions_folder})
+    for name in sorted(nodes):
+        if os.path.isdir(os.path.join(new_path, name)):
             walk(new_path, name, indent+4)
 
         else:
