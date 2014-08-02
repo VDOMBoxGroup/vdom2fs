@@ -12,10 +12,11 @@ import re
 import xml.parsers.expat
 
 from collections import OrderedDict, defaultdict
+from modulefinder import ModuleFinder
 
 import constants
 from helpers import setup_logging, DEBUG, INFO, ERROR, \
-    check_python_version, script_exit, \
+    EXCEPTION, check_python_version, script_exit, \
     create_folder, open_file, json_dump, \
     build_path, clean_data, encode, BLOCK_END, \
     print_block_end, emergency_exit, check_by_regexps, \
@@ -38,6 +39,10 @@ ACTION_EXT = ""
 RESOURCES = {}
 
 
+# libraries list
+LIBRARIES = []
+
+
 # ignore settings
 IGNORE = None
 
@@ -48,6 +53,32 @@ def detect_guids(data):
     if "current" in PARSER.pages:
         page_id = PARSER.pages["current"]
         PARSER.pages[page_id]["guids"].extend(RE_RES_UUID.findall(data))
+
+
+def detect_libraries(script_path):
+    """Find all libs used by script
+    """
+    if ACTION_EXT != ".py":
+        return
+
+    if "current" not in PARSER.pages:
+        return
+
+    page_id = PARSER.pages["current"]
+
+    finder = ModuleFinder()
+    try:
+        DEBUG("Parsing: %s", script_path)
+        finder.run_script(script_path)
+        DEBUG("Done: %s", script_path)
+
+    except Exception:
+        ERROR("Can't parse script: %s", script_path)
+        EXCEPTION("")
+        return
+
+    PARSER.pages[page_id]["libraries"].extend(finder.modules.keys())
+    PARSER.pages[page_id]["libraries"].extend(finder.badmodules.keys())
 
 
 def sort_dict(data):
@@ -156,6 +187,7 @@ class InformationTagHandler(TagHandler):
 
     def child_start(self, tagname, attrs):
         self.current_tag = tagname
+        self.data[self.current_tag].append('')
 
     def child_data(self, data):
         if self.current_tag:
@@ -257,6 +289,8 @@ class LibrariesTagHandler(BaseDRTagHandler):
     TAG = "Library"
 
     def create_name(self, attrs):
+        LIBRARIES.append(attrs["Name"])
+
         if not check_by_regexps(attrs["Name"], IGNORE["Libraries"]):
             return "{}{}".format(attrs["Name"], ACTION_EXT)
 
@@ -284,10 +318,41 @@ class LibrariesTagHandler(BaseDRTagHandler):
     def end(self):
         INFO("Completed: Libraries")
         super(LibrariesTagHandler, self).end()
+        self.update_pages_libraries()
 
     def start(self, tagname, attrs):
         super(LibrariesTagHandler, self).start(tagname, attrs)
         INFO("Parsing: Libraries")
+
+    @print_block_end
+    def update_pages_libraries(self):
+
+        if not (PARSER.config["parse_all"] or
+                PARSER.config["parse"]["pages"]):
+
+            return
+
+        INFO("Parsing: used libraries for every page")
+
+        PARSER.append_to_current_path(constants.PAGES_FOLDER)
+
+        libraries_set = set(LIBRARIES)
+
+        for page in PARSER.pages.values():
+
+            libs = list(libraries_set & set(page["libraries"]))
+
+            PARSER.append_to_current_path(page["name"])
+
+            PARSER.write_json_file(
+                constants.LIBRARIES_FILE,
+                sorted(libs, key=lambda x: x.lower())
+            )
+
+            PARSER.pop_from_current_path()
+
+        PARSER.pop_from_current_path()
+        INFO("Completed: used libraries for every page")
 
 
 class ResourcesTagHandler(BaseDRTagHandler):
@@ -296,12 +361,13 @@ class ResourcesTagHandler(BaseDRTagHandler):
     TAG = "Resource"
 
     def create_name(self, attrs):
+        RESOURCES[attrs["ID"]] = name = "{}_{}_{}".format(
+            attrs["ID"],
+            attrs["Type"] or "res",
+            attrs["Name"]
+        )
+
         if not check_by_regexps(attrs["Name"], IGNORE["Resources"]):
-            RESOURCES[attrs["ID"]] = name = "{}_{}_{}".format(
-                attrs["ID"],
-                attrs["Type"] or "res",
-                attrs["Name"]
-            )
             return name
 
         else:
@@ -343,15 +409,20 @@ class ResourcesTagHandler(BaseDRTagHandler):
 
         PARSER.append_to_current_path(constants.PAGES_FOLDER)
 
+        resources_set = set(RESOURCES.keys())
+
         for page in PARSER.pages.values():
 
-            keys = list(set(RESOURCES.keys()) & set(page["guids"]))
+            keys = list(resources_set & set(page["guids"]))
 
             PARSER.append_to_current_path(page["name"])
 
             PARSER.write_json_file(
                 constants.RESOURCES_FILE,
-                sorted([RESOURCES[key] for key in keys])
+                sorted(
+                    [RESOURCES[key] for key in keys],
+                    key=lambda x: x.lower()
+                )
             )
 
             PARSER.pop_from_current_path()
@@ -426,7 +497,8 @@ class PagesTagHandler(TagHandler):
                         "name": attrs["Name"],
                         "events": [],
                         "actions": {},
-                        "guids": []
+                        "guids": [],
+                        "libraries": []
                     }
                     PARSER.pages["current"] = attrs["ID"]
 
@@ -519,6 +591,11 @@ class ActionsTagHandler(TagHandler):
         self.actions_map[self.current_action["name"]] = \
             self.current_action["attrs"]
 
+        action_path = os.path.join(PARSER.current_path(),
+                                   self.current_action["name"])
+
+        detect_libraries(action_path)
+
     def save_actions_map(self):
         PARSER.write_json_file(
             constants.MAP_FILE,
@@ -545,6 +622,7 @@ class ObjectTagHandler(TagHandler):
     def child_start(self, tagname, attrs):
         if tagname == "Attribute":
             self.current_attribute = attrs["Name"]
+            self.attributes[self.current_attribute].append('')
 
         elif tagname == "Object":
             if not self.has_folder:
@@ -583,7 +661,7 @@ class ObjectTagHandler(TagHandler):
             ("attributes", sort_dict(self.attributes))
         ])
 
-        data = json.dumps(data)
+        data = json.dumps(data, indent=4)
         detect_guids(data)
 
         PARSER.write_file(name, data)
@@ -701,7 +779,8 @@ class E2vdomTagHandler(TagHandler):
                 OrderedDict([
                     ("actions", actions),
                     ("events", page["events"]),
-                ])
+                ]),
+                indent=4
             )
 
             detect_guids(data)
