@@ -67,7 +67,7 @@ def emergency_exit():
 def script_exit():
     """Exit from script
     """
-    sys.exit(1)
+    sys.exit(0)
 
 
 def check_python_version():
