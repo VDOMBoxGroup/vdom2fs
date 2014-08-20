@@ -1167,7 +1167,7 @@ def main():
     args_parser.add_argument("source", type=argparse.FileType("rb"),
                              help="application XML file")
 
-    args_parser.add_argument("target", type=str,
+    args_parser.add_argument("-t", "--target", type=str,
                              help="target folder")
 
     args_parser.add_argument("-v", "--verbosity", action="count",
@@ -1200,7 +1200,7 @@ def main():
                              action="store_true",
                              help="parse resources")
 
-    args_parser.add_argument("--info",
+    args_parser.add_argument("-n", "--info",
                              action="store_true",
                              help="parse information")
 
@@ -1208,15 +1208,15 @@ def main():
                              action="store_true",
                              help="parse security")
 
-    args_parser.add_argument("--structure",
+    args_parser.add_argument("-u", "--structure",
                              action="store_true",
                              help="parse structure")
 
-    args_parser.add_argument("--e2vdom",
+    args_parser.add_argument("-o", "--e2vdom",
                              action="store_true",
                              help="parse e2vdom")
 
-    args_parser.add_argument("--app-actions",
+    args_parser.add_argument("-c", "--app-actions",
                              action="store_true",
                              help="parse application actions")
 
@@ -1243,7 +1243,7 @@ def main():
 
     config = {
         "target": {
-            "path": args.target,
+            "path": args.target or args.source.name.split(".")[0],
             "erase": args.erase,
             "quiet": args.quiet,
         },
