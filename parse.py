@@ -1246,9 +1246,10 @@ def main():
         ignore = json_load(ignore, critical=True)
         INFO("Done: 'ignore' configuration file")
 
+    print os.path.split(args.source.name)
     config = {
         "target": {
-            "path": args.target or args.source.name.split(".")[0],
+            "path": args.target or os.path.split(args.source.name)[-1].split(".")[0],
             "erase": args.erase,
             "quiet": args.quiet,
         },
