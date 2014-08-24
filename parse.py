@@ -567,12 +567,17 @@ class ActionsTagHandler(TagHandler):
             self.current_action["file"].write(encode(data))
 
     def end(self):
-        super(ActionsTagHandler, self).end()
+        if self.parent.tagname == "Application" and not self.has_actions:
+            self.create_base_dir()
+            self.has_actions = True
+        
         if self.has_actions:
             self.save_actions_map()
             PARSER.pop_from_current_path()
 
         self.parent.is_actions_found = self.has_actions
+
+        super(ActionsTagHandler, self).end()
 
     def child_end(self, tagname):
         if tagname == "Action":
