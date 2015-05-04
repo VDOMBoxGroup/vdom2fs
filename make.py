@@ -239,14 +239,15 @@ def copy_resources(config):
         for old_name in files:
 
             raw_name = old_name.split("_", 2)
+            res_guid = res_name = res_type = ""
 
             try:
-                res_guid = UUID(raw_name[0])
+                res_guid = str(UUID(raw_name[0])).lower()   
 
             except ValueError:
                 res_guid = gen_guid()
-                res_type = res_name.rsplit(".", 1)
-                res_type = res_type[1] if len(res_type) == 2 else "res"
+                res_name = old_name.rsplit(".", 1)
+                res_name, res_type = res_name if len(res_name) == 2 else (res_name[0], "res")
 
             else:
                 res_type = raw_name[1]
@@ -339,7 +340,47 @@ def copy_databases(config):
 
     DEBUG("Copy databases")
 
-    copy_files(target_path, config["Databases"], config)
+    sources = config["Databases"]
+    if not isinstance(sources, (list, tuple)):
+        sources = (sources,)
+
+    for source in sources:
+
+        files = copy_files(target_path, source, config)
+
+        change_guids = False
+        if isinstance(source, dict):
+            change_guids = bool(source.get("generateGUIDs", False))
+
+        if not change_guids:
+            continue
+
+        for old_name in files:
+
+            raw_name = old_name.split("_", 1)
+            res_type = "sqlite"
+            res_guid = res_name = ""
+
+            try:
+                res_guid = str(UUID(raw_name[0])).lower()
+
+            except ValueError:
+                res_guid = gen_guid()
+                res_name = old_name.rsplit(".", 1)[0]
+
+            else:
+                res_name = raw_name[1].rsplit(".", 1)[0]
+
+            new_guid = GUIDS_TO_REPLACE[res_guid] = gen_guid()
+            new_name = "{}_{}.{}".format(new_guid, res_name, res_type)
+
+            old_path = os.path.join(target_path, old_name)
+            new_path = os.path.join(target_path, new_name)
+
+            DEBUG("Move '%s' to '%s'", old_path, new_path)
+            shutil.move(old_path, new_path)
+
+    # copy_files(target_path, config["Databases"], config)
 
     INFO("Databases were copied successfully")
 
@@ -356,7 +397,6 @@ def copy_pages(config):
                                constants.PAGES_FOLDER)
 
     pages = config["Pages"]
-    resources = config["Resources"]
 
     if not isinstance(pages, (list, tuple)):
         pages = (pages,)
@@ -429,79 +469,14 @@ def copy_pages(config):
             json_dump(info, hdlr, critical=True)
 
         # if page not copied continue, else need to change all guids to new
-        if page["mode"] == "move" and not resources:
+        if page["mode"] == "move":
             continue
 
-        chain, regexp = [], None
+        new_guid = gen_guid()
+        old_guid = info["attrs"]["ID"]
 
-        if resources:
-            chain.append(re_res_sub(resources))
-            regexp = RE_RES_UUID
-
-        if page["mode"] == "copy":
-            new_id = gen_guid()
-            objects = {
-                info["attrs"]["ID"]: new_id,
-                info["attrs"]["ID"].replace("-", "_"): new_id.replace("-", "_")
-            }
-            chain.append(re_obj_sub(objects))
-            regexp = RE_OBJ_UUID
-
-        # function for guids replacement
-        sub_func = sub_chain_func(chain)
-
-        for current, subfolder, files in os.walk(copy_path):
-
-            # objects files at first, then python files
-            for node in sorted(files, key=lambda f: os.path.splitext(f.rstrip("\/"))[1]):
-
-                node_path = os.path.join(current, node)
-                with open(node_path, "rb") as src:
-                    data = src.read()
-
-                with open(node_path, "wb") as dst:
-                    dst.write(regexp.sub(sub_func, data))
-
-        # if page.get("rename", True):
-        #     info_path = os.path.join(copy_path, constants.INFO_FILE)
-        #     with fopen(info_path, "rb") as f:
-        #         info = json_load(f)
-
-        #     info["attrs"]["Name"] = page["name"]
-
-        #     with fopen(info_path, "wb") as f:
-        #         json_dump(info, f)
-
-        # # if page not copied continue, else need to change all guids to new
-        # if page["mode"] == "move" and not resources:
-        #     continue
-
-        # chain, regexp = [], None
-
-        # if resources:
-        #     chain.append(re_res_sub(resources))
-        #     regexp = RE_RES_UUID
-
-        # if page["mode"] == "copy":
-        #     chain.append(re_obj_sub({}))
-        #     regexp = RE_OBJ_UUID
-
-        # sub_func = sub_chain_func(chain)
-
-        # for current, subfolder, files in os.walk(copy_path):
-
-        #     # objects files at first, then python files
-        #     for node in sorted(files, key=lambda f: os.path.splitext(f)[1]):
-
-        #         node_path = os.path.join(current, node)
-        #         create_new_guid = os.path.splitext(node)[1] != ".py"
-
-        #         with open(node_path, "rb") as src:
-        #             data = src.read()
-
-        #         with open(node_path, "wb") as dst:
-        #             dst.write(regexp.sub(partial(sub_func,
-        #     create_new=create_new_guid), data))
+        GUIDS_TO_REPLACE[old_guid] = new_guid
+        GUIDS_TO_REPLACE[old_guid.replace("-", "_")] = new_guid.replace("-", "_")
 
     INFO("Pages were copied successfully")
 
@@ -542,18 +517,52 @@ def create_application_info_file(config):
     INFO("Application info successfully written to '%s'", path)
 
 
+def replace_all_guids(config):
+    """
+    Replace all guids in application
+    """
+    INFO("Replace all GUIDs in application")
+    INFO("GUIDs to replace - %s", len(GUIDS_TO_REPLACE))
+
+    if GUIDS_TO_REPLACE:
+        
+        regexp = RE_OBJ_UUID
+        
+        # function for guids replacement
+        sub_func = sub_chain_func([re_res_sub(GUIDS_TO_REPLACE)])
+
+        for cwd, dirs, files in os.walk(config["target"]["path"]):
+
+            if files:
+                DEBUG("Replace GUIDs in directory '%s'", cwd)
+
+                for node in sorted(files):
+
+                    node_path = os.path.join(cwd, node)
+                    DEBUG(" - Replace in file %s", node_path)
+
+                    with open(node_path, "rb") as src:
+                        data = src.read()
+
+                    with open(node_path, "wb") as dst:
+                        dst.write(regexp.sub(sub_func, data))
+
+    INFO("GUIDs successfully replaced")
+
+
 def make(config):
     """Call copy functions in cycle
     """
     # Create child folders
     for func in (create_basic_structure,
                  copy_resources,
-                 copy_libraries,
                  copy_databases,
+                 copy_libraries,
                  copy_security,
                  copy_app_actions,
                  copy_pages,
-                 create_application_info_file):
+                 create_application_info_file,
+                 replace_all_guids):
 
         INFO("")
         INFO("+"*70)
