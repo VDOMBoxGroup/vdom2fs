@@ -394,12 +394,13 @@ def write_pages(config):
 
     write_xml("Objects", indent=2, closing=True)
 
-    write_xml("Actions", indent=2)
+
     actions_path = os.path.join(config["source"], constants.APP_ACTIONS_FOLDER)
     if os.path.exists(actions_path):
-        write_actions(actions_path, 4)
-
-    write_xml("Actions", indent=2, closing=True)
+        write_actions(actions_path, 2)
+    else:
+        write_xml("Actions", indent=2)
+        write_xml("Actions", indent=2, closing=True)
 
     INFO("Pages Data: Done!")
 
