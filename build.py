@@ -34,7 +34,7 @@ def cdata(data, force=False):
         return data
 
     if force or check_data(data):
-        return "<![CDATA[{}]]>".format(data.replace("]]>", "]]]]><![CDATA["))
+        return "<![CDATA[{}]]>".format(data.replace("]]>", "]]]]><![CDATA[>"))
 
     return data
 
