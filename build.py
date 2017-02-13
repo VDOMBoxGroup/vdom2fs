@@ -34,7 +34,10 @@ def cdata(data, force=False):
         return data
 
     if force or check_data(data):
-        return "<![CDATA[{}]]>".format(data.replace("]]>", "]]]]><![CDATA[>"))
+        res = u"<![CDATA[{}]]>".format(data.replace("]]>", "]]]]><![CDATA[>"))    
+        if isinstance(res, unicode):
+                res = res.encode('utf8')
+        return res
 
     return data
 
