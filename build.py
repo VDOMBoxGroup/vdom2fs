@@ -34,15 +34,19 @@ def cdata(data, force=False):
         return data
 
     if force or check_data(data):
-        res = u"<![CDATA[{}]]>".format(data.replace("]]>", "]]]]><![CDATA[>"))    
-        if isinstance(res, unicode):
-                res = res.encode('utf8')
-        return res
+        if isinstance(data, str):
+            data = data.decode('utf8')
 
+        res = u"<![CDATA[{}]]>".format(data.replace("]]>", "]]]]><![CDATA[>"))
+        return res.encode('utf8')
+        
     return data
 
 
 def write_xml(tagname, attrs=None, data=None, close=False, indent=0, force_cdata=False, closing=False):
+    if isinstance(data, unicode):
+        data = data.encode('utf8')
+
     OUTPUT_IO.write("{indent}<{closing}{tagname}{attrs}{close}>{data}{closetag}{newline}".format(
         indent=" "*indent,
         tagname=tagname,
