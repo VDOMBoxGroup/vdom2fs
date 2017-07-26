@@ -131,7 +131,15 @@ class VDOMServer(object):
 
 
 	def update(self, fname, upsert=True):
-		pass
+		with open(fname, 'rb') as f:
+			files = {'appfile' : f}
+			data = {
+				'format' : 'xml',
+				'vhname' : str(uuid4())
+			}
+
+			self.session.post(self.url('/install.py'), data=data, files=files)
+
 
 	def wait(self, tout=30):
 		t1 = time.time()
@@ -178,6 +186,7 @@ parser = ArgumentParser(add_help=False)
 
 parser.add_argument('host')
 parser.add_argument('--install', dest='install')
+parser.add_argument('--update', dest='update')
 parser.add_argument('--uninstall', dest='uninstall')
 parser.add_argument('--list', dest='list', action='store_true')
 parser.add_argument('--select', dest='select')
@@ -207,6 +216,9 @@ if options.uninstall:
 
 if options.install:
 	server.install(options.install)
+
+if options.update:
+	server.update(options.update)
 
 if options.select:
 	server.select(options.select)
