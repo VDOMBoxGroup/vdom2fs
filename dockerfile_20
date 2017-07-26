@@ -1,0 +1,25 @@
+FROM docker.vdombox.ru:5000/vdom20promail
+
+ARG APP_NAME
+
+RUN cd /home/tc/ &&\
+	git clone https://github.com/miracle2k/xappy.git &&\
+	cd xappy &&\
+	python setup.py install
+
+RUN cd /home/tc/app/sources &&\
+    mv settings.py settings.py.patched &&\
+    cp settings.py.orig settings.py &&\
+    python manage.py -c ../vdom_deploy.cfg uninstall promail
+
+
+COPY build/${APP_NAME}_compiled.xml /home/tc/app/${APP_NAME}_compiled.xml
+
+RUN cd /home/tc/app/sources &&\
+    python manage.py -c ../vdom_deploy.cfg install ../${APP_NAME}_compiled.xml &&\
+    python manage.py -c ../vdom_deploy.cfg select ${APP_NAME} &&\
+    mv settings.py.patched settings.py
+
+
+ENTRYPOINT "/home/tc/app/init.sh"
+    

@@ -1,0 +1,7 @@
+FROM docker.vdombox.ru:5000/vdomplatform:latest
+
+RUN cd /usr/local/vdom/bin &&\
+	sed -i -e "s/SERVER-PORT = 8080/SERVER-PORT = 80/" vdom.cfg
+
+USER root
+
