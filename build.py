@@ -94,7 +94,11 @@ def write_e2vdom(config):
     for name in os.listdir(pages_path):
         e2vdom_path = os.path.join(pages_path, name, constants.E2VDOM_FILE)
 
-        DEBUG("Open file: %s", e2vdom_path)
+        if not os.path.exists(e2vdom_path):
+            INFO("No file %s; skipping E2VDOM for %s", e2vdom_path, name)
+            continue
+        else:
+            DEBUG("Open file: %s", e2vdom_path)
 
         with open_file(e2vdom_path) as e2vdom_file:
             e2vdom = json_load(e2vdom_file, critical=True)
@@ -403,11 +407,7 @@ def write_pages(config):
 
 
     actions_path = os.path.join(config["source"], constants.APP_ACTIONS_FOLDER)
-    if os.path.exists(actions_path):
-        write_actions(actions_path, 2)
-    else:
-        write_xml("Actions", indent=2)
-        write_xml("Actions", indent=2, closing=True)
+    write_actions(actions_path, 2)
 
     INFO("Pages Data: Done!")
 
@@ -445,8 +445,10 @@ def write_actions(path, indent):
     actions_map_path = os.path.join(path, constants.MAP_FILE)
 
     if not os.path.exists(actions_map_path):
-        CRITICAL("Can't find: %s", actions_map_path)
-        emergency_exit()
+        INFO("Can't find: %s; skipping Actions", actions_map_path)
+        write_xml("Actions", indent=2)
+        write_xml("Actions", indent=2, closing=True)
+        return
 
     with open_file(actions_map_path) as actions_map_file:
         actions_map = json_load(actions_map_file, critical=True)
