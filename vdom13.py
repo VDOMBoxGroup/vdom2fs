@@ -133,12 +133,7 @@ class VDOMServer(object):
 	def update(self, fname, upsert=True):
 		with open(fname, 'rb') as f:
 			files = {'appfile' : f}
-			data = {
-				'format' : 'xml',
-				'vhname' : str(uuid4())
-			}
-
-			self.session.post(self.url('/install.py'), data=data, files=files)
+			self.session.post(self.url('/update.py'), files=files)
 
 
 	def wait(self, tout=30):
