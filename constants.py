@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # encoding: utf-8
-
+import re
 
 APP_ACTIONS_FOLDER = "Actions-Application"
 DATABASES_FOLDER = "Databases"
@@ -48,3 +48,10 @@ RESERVED_NAMES = (
     LIBRARIES_FILE,
     OS_X_FOLDER
 )
+
+RESERVED_NAMES_REGEXP = re.compile(".*_source.js")
+
+EXTERNAL_SOURCE_TYPES = {
+    'dd7a56de-7a14-4f0b-9370-c34d9aa5469b': "_source.js"
+}
+

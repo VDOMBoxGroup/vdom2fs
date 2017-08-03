@@ -655,6 +655,13 @@ class ObjectTagHandler(TagHandler):
             name = constants.INFO_FILE
         else:
             name = "{}.json".format(self.attrs["Name"])
+        if "Type" in self.attrs \
+            and self.attrs['Type'] in constants.EXTERNAL_SOURCE_TYPES \
+            and "source" in self.attributes:
+                source_name = name + constants.EXTERNAL_SOURCE_TYPES[self.attrs['Type']]
+                PARSER.write_file(source_name, "".join(self.attributes["source"]))
+                self.attrs["source_file_name"] = source_name
+                del self.attributes["source"]
 
         self.attributes = {
             key: encode(clean_data("".join(val)))

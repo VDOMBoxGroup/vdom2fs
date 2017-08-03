@@ -429,6 +429,7 @@ def walk(path, name, indent):
     write_xml("Objects", indent=indent+2)
 
     nodes = list(set(os.listdir(new_path)) - set(constants.RESERVED_NAMES) - {actions_folder})
+    nodes = [node for node in nodes if not constants.RESERVED_NAMES_REGEXP.match(node)]
     for name in sorted(nodes):
         if os.path.isdir(os.path.join(new_path, name)):
             walk(new_path, name, indent+4)
@@ -488,6 +489,14 @@ def write_actions(path, indent):
 def write_object(path, name, indent):
     with open_file(os.path.join(path, name)) as obj_file:
         obj_json = json_load(obj_file, critical=True)
+
+    if "Type" in obj_json["attrs"] \
+        and obj_json["attrs"]["Type"] in constants.EXTERNAL_SOURCE_TYPES \
+        and "source_file_name" in obj_json["attrs"]:
+            source_file_name = obj_json["attrs"]["source_file_name"]
+            del obj_json["attrs"]["source_file_name"]
+            with open_file(os.path.join(path, source_file_name)) as source_file:
+                obj_json["attributes"]["source"] = encode(clean_data(source_file.read()))
 
     write_xml("Object", attrs=obj_json["attrs"], indent=indent)
     write_xml("Actions", indent=indent+2, data="", close=True)
