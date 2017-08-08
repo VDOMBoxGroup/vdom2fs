@@ -72,6 +72,20 @@ run20: compile
 	@echo Complete.
 
 
+unpackxml:
+	$(eval APPXML = $(shell read -p "Path to application xml file: " "APPXML"; echo "$$APPXML"))
+	$(eval APPXML = $(shell readlink -m "$(APPXML)"))
+
+	test -f "$(APPXML)"
+	rm -rf unpackxml.tmp
+	python ../vdom2fs/parse.py -t unpackxml.tmp "$(APPXML)"
+
+	rm -rf Actions-Application/ Databases/ Libraries/ Pages/ Resources/ Security/ __info__.json
+	cp -ra unpackxml.tmp/* .
+	rm -rf unpackxml.tmp
+
+
 clean:
-	rm -rf ./build/*
+	rm -rf ./build/$(APP_NAME)_compiled*
+	rm -rf ./build/tests
 
