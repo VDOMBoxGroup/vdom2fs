@@ -5,8 +5,15 @@ TMP_DIR := $(shell readlink -m ./build/tests)
 
 compile:
 	mkdir -p ./build/tests/
-	python ../vdom2fs/make.py -ve vdom2fs.conf ./build/$(APP_NAME)_compiled
-	python ../vdom2fs/build.py ./build/$(APP_NAME)_compiled ./build/$(APP_NAME)_compiled.xml
+	rm -rf ./build/$(APP_NAME)*
+
+	set -x && \
+		if [ -e vdom2fs.conf ]; then \
+			python ../vdom2fs/make.py -ve vdom2fs.conf ./build/$(APP_NAME)_compiled; \
+			python ../vdom2fs/build.py ./build/$(APP_NAME)_compiled ./build/$(APP_NAME)_compiled.xml; \
+		else \
+			python ../vdom2fs/build.py . ./build/$(APP_NAME)_compiled.xml; \
+		fi
 
 
 run13: compile
