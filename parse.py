@@ -961,22 +961,22 @@ class ApplicationTagHandler(TagHandler):
 
     def child_start(self, tagname, attrs):
         tag_handlers_map = {
-            "Information": InformationTagHandler,
-            "Libraries": LibrariesTagHandler,
-            "Resources": ResourcesTagHandler,
-            "Databases": DatabasesTagHandler,
-            "Objects": PagesTagHandler,
-            "E2vdom": E2vdomTagHandler,
-            "Structure": StructureTagHandler,
-            "Security": SecurityTagHandler,
+            "information": InformationTagHandler,
+            "libraries": LibrariesTagHandler,
+            "resources": ResourcesTagHandler,
+            "databases": DatabasesTagHandler,
+            "objects": PagesTagHandler,
+            "e2vdom": E2vdomTagHandler,
+            "structure": StructureTagHandler,
+            "security": SecurityTagHandler,
         }
 
         if PARSER.config["parse_all"] or \
                 PARSER.config["parse"]["app_actions"]:
 
-            tag_handlers_map["Actions"] = ActionsTagHandler
+            tag_handlers_map["actions"] = ActionsTagHandler
 
-        handler_cls = tag_handlers_map.get(tagname, None)
+        handler_cls = tag_handlers_map.get(tagname.lower(), None)
         if handler_cls:
             handler_cls().start(tagname, attrs)
 

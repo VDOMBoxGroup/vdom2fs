@@ -323,14 +323,17 @@ def write_security(config):
     security_path = os.path.join(config["source"], constants.SECURITY_FOLDER)
 
     if not os.path.exists(security_path):
-        CRITICAL("Can't find: {}".format(security_path))
-        emergency_exit()
+        INFO("Can't find: {}".format(security_path))
+        return
 
     groups_and_users_path = \
         os.path.join(security_path, constants.USERS_GROUPS_FILE)
 
-    with open_file(groups_and_users_path) as ug_file:
-        ug_json = json_load(ug_file, critical=True)
+    if os.path.exists(groups_and_users_path):
+        with open_file(groups_and_users_path) as ug_file:
+            ug_json = json_load(ug_file, critical=True)
+    else:
+        ug_json = {}
 
     write_xml("Security", indent=2)
     write_xml("Groups", indent=4, close=True)
