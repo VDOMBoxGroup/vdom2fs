@@ -696,6 +696,7 @@ class E2vdomTagHandler(TagHandler):
         self.current_mode = ""
         self.current_node = None
         self.is_data_allowed = False
+        self.actions = {}
 
     def start(self, tagname, attrs):
         super(E2vdomTagHandler, self).start(tagname, attrs)
@@ -704,6 +705,11 @@ class E2vdomTagHandler(TagHandler):
     @print_block_end
     def end(self):
         super(E2vdomTagHandler, self).end()
+
+        for page in PARSER.pages.values():
+            for act_id in page["actions"]:
+                page["actions"][act_id] = self.actions.get(act_id, '')
+
         self.save()
         INFO("Completed: E2VDOM")
 
@@ -755,13 +761,7 @@ class E2vdomTagHandler(TagHandler):
             if not self.current_node["Params"]:
                 del self.current_node["Params"]
 
-            for page in PARSER.pages.values():
-                if self.current_node["ID"] in page["actions"]:
-                    page["actions"][self.current_node["ID"]] = \
-                        sort_dict(self.current_node)
-
-                    break
-
+            self.actions[self.current_node["ID"]] = sort_dict(self.current_node)
             self.current_node = ""
 
         elif self.current_mode == "Actions" and tagname == "Actions":
