@@ -1,7 +1,10 @@
 
 APP_NAME := $(shell basename "$$(pwd)")
 TMP_DIR := $(shell readlink -m ./build/tests)
+XML_FILE := ../vdom2fs/application.xml
+XML_FILE_BKP := ../vdom2fs/application_bkp.xml
 
+.PHONY: ask_file unpack_remote
 
 compile:
 	mkdir -p ./build/tests/
@@ -72,17 +75,31 @@ run20: compile
 	@echo Complete.
 
 
-unpackxml:
-	$(eval APPXML = $(shell read -p "Path to application xml file: " "APPXML"; echo "$$APPXML"))
-	$(eval APPXML = $(shell readlink -m "$(APPXML)"))
+unpackxml: | ask_file do_unpack
 
+ask_file:
+	$(eval APPXML = $(shell read -p "Path to application xml file: " "APPXML"; echo "$$APPXML"))
+	$(eval APPXML = $(realpath $(APPXML)))
 	test -f "$(APPXML)"
+	cp "$(APPXML)" "$(XML_FILE)"
+
+do_unpack: $(XML_FILE)
 	rm -rf unpackxml.tmp
-	python ../vdom2fs/parse.py -t unpackxml.tmp "$(APPXML)"
+	python ../vdom2fs/parse.py -t unpackxml.tmp "$(XML_FILE)"
 
 	rm -rf Actions-Application/ Databases/ Libraries/ Pages/ Resources/ Security/ __info__.json
 	cp -ra unpackxml.tmp/* .
 	rm -rf unpackxml.tmp
+	mv $(XML_FILE) $(XML_FILE_BKP)
+
+unpack_remote: | fetch_remote do_unpack
+
+fetch_remote:
+	$(eval CONF_FILE = $(shell readlink -m "remote_unpack.conf"))
+	$(eval CONF_FILE = $(realpath $(CONF_FILE)))
+	test -f "$(CONF_FILE)"
+	python ../vdom2fs/exporter.py -c $(CONF_FILE)
+	mv "exported_app.xml" "$(XML_FILE)"
 
 
 clean:
