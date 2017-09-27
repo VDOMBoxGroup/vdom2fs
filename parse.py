@@ -742,7 +742,8 @@ class E2vdomTagHandler(TagHandler):
                 self.current_node["Params"] = []
 
             elif tagname == "Parameter":
-                self.current_node["Params"].append([attrs.get("ScriptName", attrs["Name"]), []])
+                key = "ScriptName" if "ScriptName" in attrs else "Name"
+                self.current_node["Params"].append([attrs[key], []])
                 self.is_data_allowed = True
 
     def child_data(self, data):
