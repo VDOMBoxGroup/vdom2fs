@@ -617,6 +617,7 @@ class ObjectTagHandler(TagHandler):
         self.attributes = defaultdict(list)
         self.current_attribute = None
         self.has_folder = False
+        self.childs_order = []
 
     def create_dir(self):
         if not self.has_folder:
@@ -632,6 +633,8 @@ class ObjectTagHandler(TagHandler):
         elif tagname == "Object":
             if not self.has_folder:
                 self.create_dir()
+
+            self.childs_order.append(attrs["Name"])
 
             ObjectTagHandler().start(tagname, attrs)
 
@@ -655,6 +658,7 @@ class ObjectTagHandler(TagHandler):
             name = constants.INFO_FILE
         else:
             name = "{}.json".format(self.attrs["Name"])
+
         if "Type" in self.attrs \
             and self.attrs['Type'] in constants.EXTERNAL_SOURCE_TYPES \
             and "source" in self.attributes:
@@ -677,6 +681,11 @@ class ObjectTagHandler(TagHandler):
         detect_guids(data)
 
         PARSER.write_file(name, data)
+
+        if self.childs_order:
+            order_data = json.dumps(self.childs_order, indent=4)
+            detect_guids(order_data)
+            PARSER.write_file(constants.CHILDS_ORDER, order_data)
 
         if self.has_folder or self.is_actions_found:
             PARSER.pop_from_current_path()
@@ -757,7 +766,6 @@ class E2vdomTagHandler(TagHandler):
             self.current_mode = ""
 
         elif self.current_mode == "Actions" and tagname == "Action":
-
             if not self.current_node["Params"]:
                 del self.current_node["Params"]
 
