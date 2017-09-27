@@ -2,10 +2,10 @@ FROM docker.vdombox.ru:5000/vdom20promail
 
 ARG APP_NAME
 
-RUN cd /home/tc/ &&\
-	git clone https://github.com/miracle2k/xappy.git &&\
-	cd xappy &&\
-	python setup.py install
+# RUN cd /home/tc/ &&\
+# 	git clone https://github.com/miracle2k/xappy.git &&\
+# 	cd xappy &&\
+# 	python setup.py install
 
 RUN cd /home/tc/app/sources &&\
     mv settings.py settings.py.patched &&\
@@ -16,10 +16,12 @@ RUN cd /home/tc/app/sources &&\
 COPY build/${APP_NAME}_compiled.xml /home/tc/app/${APP_NAME}_compiled.xml
 
 RUN cd /home/tc/app/sources &&\
-    python manage.py -c ../vdom_deploy.cfg install ../${APP_NAME}_compiled.xml &&\
-    python manage.py -c ../vdom_deploy.cfg select ${APP_NAME} &&\
-    mv settings.py.patched settings.py
+    cp settings.py settings.py.prod &&\
+    python ../update_settings.py -f settings.py.prod 'CONSOLE_LOG_LEVEL=0' > settings.py &&\
+    python manage.py install ../${APP_NAME}_compiled.xml &&\
+    APP_ID=$(cat ../${APP_NAME}_compiled.xml | grep -i -E '<id>[0-9a-f-]{36}</id>' | head -1 | cut -d">" -f2 | cut -d"<" -f1) &&\
+    python manage.py select ${APP_ID}
 
 
 ENTRYPOINT "/home/tc/app/init.sh"
-    
+
