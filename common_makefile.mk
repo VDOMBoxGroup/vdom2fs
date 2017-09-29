@@ -92,6 +92,7 @@ do_unpack: $(XML_FILE)
 	rm -rf unpackxml.tmp
 	mv $(XML_FILE) $(XML_FILE_BKP)
 
+remote_unpack: unpack_remote
 unpack_remote: | fetch_remote do_unpack
 
 fetch_remote:
