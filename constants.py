@@ -14,6 +14,7 @@ OS_X_FOLDER = ".DS_Store"
 
 E2VDOM_FILE = "__e2vdom__.json"
 INFO_FILE = "__info__.json"
+CHILDS_ORDER = "__childs_order__.json"
 LIBRARIES_FILE = "__libraries__.json"
 LDAP_LDIF = "__ldap__.ldif"
 MAP_FILE = "__map__.json"
@@ -38,6 +39,7 @@ DO_NOT_DELETE = (
 RESERVED_NAMES = (
     E2VDOM_FILE,
     INFO_FILE,
+    CHILDS_ORDER,
     LDAP_LDIF,
     MAP_FILE,
     RESOURCES_FILE,

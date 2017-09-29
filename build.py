@@ -431,9 +431,32 @@ def walk(path, name, indent):
     write_actions(os.path.join(new_path, actions_folder), indent+2)
     write_xml("Objects", indent=indent+2)
 
+
+    childs_order_path = os.path.join(new_path, constants.CHILDS_ORDER)
+
+    if os.path.exists(childs_order_path):
+        with open(childs_order_path) as f:
+            names = json_load(f, default=[], critical=False)
+            names = map(lambda s: s.lower(), names)
+            childs_order = dict(zip(names, xrange(len(names))))
+    else:
+        childs_order = {}
+
+    max_value = len(childs_order) + 1
+
+
+    def key_func(name):
+        key = name.lower()
+        if key.endswith('.json'): 
+            key = key[:-5]
+
+        return [childs_order.get(key, max_value), name]
+
     nodes = list(set(os.listdir(new_path)) - set(constants.RESERVED_NAMES) - {actions_folder})
     nodes = [node for node in nodes if not constants.RESERVED_NAMES_REGEXP.match(node)]
-    for name in sorted(nodes):
+    ordered_nodes = sorted(nodes, key=key_func)
+
+    for name in ordered_nodes:
         if os.path.isdir(os.path.join(new_path, name)):
             walk(new_path, name, indent+4)
 
@@ -450,8 +473,8 @@ def write_actions(path, indent):
 
     if not os.path.exists(actions_map_path):
         INFO("Can't find: %s; skipping Actions", actions_map_path)
-        write_xml("Actions", indent=2)
-        write_xml("Actions", indent=2, closing=True)
+        write_xml("Actions", indent=indent)
+        write_xml("Actions", indent=indent, closing=True)
         return
 
     with open_file(actions_map_path) as actions_map_file:

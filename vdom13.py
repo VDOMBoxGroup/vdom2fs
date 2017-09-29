@@ -77,7 +77,7 @@ class VDOMServer(object):
 		appid_or_name = appid_or_name.lower()
 		
 		for id, name in self.list():
-			if appid_or_name in [id.lower(), name.lower()]:
+			if appid_or_name in [id.lower(), name.lower(), '{0}:{1}'.format(id, name.lower())]:
 				return id
 		
 		return None
@@ -186,6 +186,7 @@ parser.add_argument('--uninstall', dest='uninstall')
 parser.add_argument('--list', dest='list', action='store_true')
 parser.add_argument('--select', dest='select')
 parser.add_argument('--wait', dest='wait', nargs='?', const=-1, type=int)
+parser.add_argument('--export', dest='export', nargs=2)
 
 options = parser.parse_args()
 
@@ -218,5 +219,8 @@ if options.update:
 if options.select:
 	server.select(options.select)
 
-
+if options.export:
+	id, fname = options.export
+	appid = server.get_appid(id)
+	server.export(appid, fname)
 

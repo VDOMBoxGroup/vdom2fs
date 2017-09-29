@@ -19,7 +19,9 @@ compile:
 		fi
 
 
-run13: compile
+run13:
+	-make compile
+
 	$(eval USER_DATA := "$(TMP_DIR)/vdom13_userdata/")
 	$(eval CONT_NAME := "vdom13$(APP_NAME)")
 	$(eval IMG_NAME := "vdom13$(APP_NAME)")
@@ -50,7 +52,9 @@ run13: compile
 	@echo Complete.
 
 
-run20: compile
+run20:
+	-make compile
+
 	$(eval USER_DATA := "$(TMP_DIR)/vdom20_userdata/")
 	$(eval CONT_NAME := "vdom20$(APP_NAME)")
 	$(eval IMG_NAME := "vdom20$(APP_NAME)")
@@ -106,4 +110,5 @@ fetch_remote:
 clean:
 	rm -rf ./build/$(APP_NAME)_compiled*
 	rm -rf ./build/tests
+
 
