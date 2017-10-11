@@ -8,19 +8,21 @@ ARG APP_NAME
 # 	python setup.py install
 
 RUN cd /home/tc/app/sources &&\
-    mv settings.py settings.py.patched &&\
+	python ../update_settings.py -f settings.py 'CONSOLE_LOG_LEVEL=0' > settings.py.patched &&\
     cp settings.py.orig settings.py &&\
     python manage.py -c ../vdom_deploy.cfg uninstall promail
 
 
 COPY build/${APP_NAME}_compiled.xml /home/tc/app/${APP_NAME}_compiled.xml
 
+
 RUN cd /home/tc/app/sources &&\
     cp settings.py settings.py.prod &&\
     python ../update_settings.py -f settings.py.prod 'CONSOLE_LOG_LEVEL=0' > settings.py &&\
     python manage.py install ../${APP_NAME}_compiled.xml &&\
     APP_ID=$(cat ../${APP_NAME}_compiled.xml | grep -i -E '<id>[0-9a-f-]{36}</id>' | head -1 | cut -d">" -f2 | cut -d"<" -f1) &&\
-    python manage.py select ${APP_ID}
+    python manage.py select ${APP_ID} &&\
+    mv settings.py.patched settings.py
 
 
 ENTRYPOINT "/home/tc/app/init.sh"
