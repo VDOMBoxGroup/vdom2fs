@@ -95,6 +95,8 @@ class TagHandler(object):
         self.tagname = tagname
         self.attrs = attrs or {}
 
+        self.is_cdata_section = False
+
     def start(self, tagname, attrs):
         """On element start
         """
@@ -131,6 +133,16 @@ class TagHandler(object):
         """On element data
         """
         pass
+
+    def start_cdata(self):
+        """On CDATA section start
+        """
+        self.is_cdata_section = True
+
+    def end_cdata(self):
+        """On CDATA section end
+        """
+        self.is_cdata_section = False
 
     @property
     def parent(self):
@@ -244,6 +256,7 @@ class BaseDRTagHandler(TagHandler):
         self.current = None
         PARSER.append_to_current_path(self.FOLDER)
 
+
     def create_name(self, attrs):
         return attrs["Name"]
 
@@ -298,15 +311,25 @@ class LibrariesTagHandler(BaseDRTagHandler):
             DEBUG("Ignore library: %s", attrs["Name"])
             return ""
 
+    def child_data(self, data):
+        if not self.is_cdata_section:
+            return
+
+        super(LibrariesTagHandler, self).child_data(data)
+
     def save_file(self):
         if not (PARSER.config["parse_all"] or
                 PARSER.config["parse"]["libraries"]):
 
             return
 
+        # add new line at the end
+        data = self.current["file"].getvalue()
+        data += '\n' if data and data[-1] != '\n' else ''
+
         PARSER.write_file(
             self.current["name"],
-            self.current["file"].getvalue()
+            data
         )
 
     def save_map(self):
@@ -563,6 +586,9 @@ class ActionsTagHandler(TagHandler):
             }
 
     def child_data(self, data):
+        if not self.is_cdata_section:
+            return
+
         if self.current_action:
             self.current_action["file"].write(encode(data))
 
@@ -587,6 +613,9 @@ class ActionsTagHandler(TagHandler):
     def save_action(self):
         data = self.current_action["file"].getvalue()
         detect_guids(data)
+
+        # add new line at end of file
+        data += '\n' if data and data[-1] != '\n' else ''
 
         PARSER.write_file(
             self.current_action["name"],
@@ -1082,6 +1111,16 @@ class Parser(object):
         """
         self.current_handler.child_data(data)
 
+    def start_cdata(self):
+        """CDATA section found
+        """
+        self.current_handler.start_cdata()
+
+    def end_cdata(self):
+        """CDATA section closed
+        """
+        self.current_handler.end_cdata()
+
     def parse(self, source, target, config):
         """Setup logging and start main process
         """
@@ -1095,6 +1134,9 @@ class Parser(object):
         expat.StartElementHandler = self.start_element
         expat.EndElementHandler = self.end_element
         expat.CharacterDataHandler = self.char_data
+        expat.StartCdataSectionHandler = self.start_cdata
+        expat.EndCdataSectionHandler = self.end_cdata
+
         expat.ParseFile(source)
 
 
