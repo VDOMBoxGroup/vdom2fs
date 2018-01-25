@@ -246,8 +246,8 @@ def write_databases(config):
 
     dbs_path = os.path.join(config["source"], constants.DATABASES_FOLDER)
     if not os.path.exists(dbs_path):
-        CRITICAL("Can't find: {}".format(dbs_path))
-        emergency_exit()
+        DEBUG("Can't find: {}".format(dbs_path))
+        return
 
     write_xml("Databases", indent=2)
 
