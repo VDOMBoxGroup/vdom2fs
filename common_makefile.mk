@@ -83,7 +83,7 @@ unpackxml: | ask_file do_unpack
 
 ask_file:
 	$(eval APPXML = $(shell read -p "Path to application xml file: " "APPXML"; echo "$$APPXML"))
-	$(eval APPXML = $(realpath $(APPXML)))
+	$(eval APPXML = $(shell readlink -m "$(APPXML)"))
 	test -f "$(APPXML)"
 	cp "$(APPXML)" "$(XML_FILE)"
 
@@ -104,7 +104,7 @@ fetch_remote:
 	$(eval CONF_FILE = $(realpath $(CONF_FILE)))
 	test -f "$(CONF_FILE)"
 	python ../vdom2fs/exporter.py -c $(CONF_FILE)
-	mv "exported_app.xml" "$(XML_FILE)"
+	# mv "exported_app.xml" "$(XML_FILE)"
 
 
 clean:
