@@ -697,7 +697,7 @@ class ObjectTagHandler(TagHandler):
                 del self.attributes["source"]
 
         self.attributes = {
-            key: encode(clean_data("".join(val)))
+            key: encode(clean_data("".join(val))).split('\n')
             for (key, val) in self.attributes.items()
         }
 

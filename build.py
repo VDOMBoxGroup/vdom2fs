@@ -537,7 +537,7 @@ def write_attributes(attributes, indent):
         write_xml(
             "Attribute",
             attrs={"Name": key},
-            data=clean_data(encode(value)),
+            data=clean_data(encode("".join(value))),
             indent=indent+2,
             close=True
         )
