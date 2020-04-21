@@ -534,10 +534,12 @@ def write_object(path, name, indent):
 def write_attributes(attributes, indent):
     write_xml("Attributes", indent=indent)
     for key, value in attributes.items():
+        if isinstance(value, list):
+            value = "\n".join(value)
         write_xml(
             "Attribute",
             attrs={"Name": key},
-            data=clean_data(encode("\n".join(value))),
+            data=clean_data(encode(value)),
             indent=indent+2,
             close=True
         )
