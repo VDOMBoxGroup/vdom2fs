@@ -534,6 +534,8 @@ def write_object(path, name, indent):
 def write_attributes(attributes, indent):
     write_xml("Attributes", indent=indent)
     for key, value in attributes.items():
+        if isinstance(value, list):
+            value = "\n".join(value)
         write_xml(
             "Attribute",
             attrs={"Name": key},
