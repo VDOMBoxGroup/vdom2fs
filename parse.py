@@ -1283,6 +1283,10 @@ def main():
                              action="store_true",
                              help="parse application actions")
 
+    args_parser.add_argument("-ds", "--delete-source",
+                             action="store_true",
+                             help="delete source .xml file")
+
     args = args_parser.parse_args()
 
     # Setup logging system and show necessary messages
@@ -1312,6 +1316,7 @@ def main():
         },
         "source": args.source,
         "ignore": ignore,
+        "delete_source": args.delete_source,
         "parse": {
             "app_actions": args.app_actions,
             "e2vdom": args.e2vdom,
@@ -1333,6 +1338,10 @@ def main():
 
     # Main process starting
     parse(config)
+
+    if config["delete_source"] and os.path.exists(args.source.name):
+        args.source.close()
+        os.remove(args.source.name)
 
     INFO("\nPath to application:\n{}".format(config["target"]["path"]))
 
