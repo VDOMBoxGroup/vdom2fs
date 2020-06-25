@@ -824,11 +824,12 @@ class E2vdomTagHandler(TagHandler):
 
             actions = sorted(page["actions"].items())
             actions = [act[1] for act in actions if act[1]]
+            events = sorted(page["events"])
 
             data = json.dumps(
                 OrderedDict([
                     ("actions", actions),
-                    ("events", page["events"]),
+                    ("events", events),
                 ]),
                 indent=4
             )

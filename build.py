@@ -6,7 +6,6 @@ import argparse
 import base64
 import logging
 import os
-
 from uuid import UUID
 
 import constants
@@ -15,9 +14,10 @@ from helpers import setup_logging, DEBUG, INFO, ERROR, CRITICAL, \
     json_load, open_file, clean_data, encode, emergency_exit, \
     BLOCK_END, print_block_end
 
-
 # Global variable for output
 OUTPUT_IO = None
+# Global dict of objects by their GUIDs
+OBJS = {}
 
 
 def check_data(data):
@@ -427,7 +427,18 @@ def walk(path, name, indent):
     with open_file(info_path) as info_file:
         info_json = json_load(info_file, critical=True)
 
-    write_xml("Object", attrs=info_json["attrs"], indent=indent)
+    attrs = info_json["attrs"]
+    if attrs is not None and 'ID' in attrs:
+        id = attrs['ID']
+        if id in OBJS:
+            ERROR("Encountered duplicate GUID: {duplicate} duplicates {origin}: Ignoring {duplicate}".format(
+                duplicate=name, origin=OBJS[id]
+            ))
+            return
+        else:
+            OBJS[id] = name
+
+    write_xml("Object", attrs=attrs, indent=indent)
     write_actions(os.path.join(new_path, actions_folder), indent+2)
     write_xml("Objects", indent=indent+2)
 
@@ -550,6 +561,7 @@ def build(config):
     """Build function
     """
     global OUTPUT_IO
+    global OBJS
 
     if not os.path.isdir(config["source"]):
         ERROR("Can't find %s", config["source"])
@@ -560,6 +572,7 @@ def build(config):
         """<?xml version="1.0" encoding="utf-8"?>\n"""
         """<Application>\n"""
     )
+    OBJS = {}
 
     write_app_info(config)
     write_pages(config)
