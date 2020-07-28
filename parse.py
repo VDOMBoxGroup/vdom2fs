@@ -763,8 +763,7 @@ class E2vdomTagHandler(TagHandler):
             elif tagname == "Action":
                 self.current_node["actions"].append(attrs["ID"])
 
-        elif self.current_mode == "Actions" and \
-                tagname in ("Action", "Parameter"):
+        elif self.current_mode == "Actions" and tagname in ("Action", "Parameter"):
 
             if tagname == "Action":
                 self.current_node = attrs
@@ -822,14 +821,20 @@ class E2vdomTagHandler(TagHandler):
         for page in PARSER.pages.values():
             PARSER.pages["current"] = page["id"]
 
-            actions = sorted(page["actions"].items())
-            actions = [act[1] for act in actions if act[1]]
-            events = sorted(page["events"])
+            #FILTER FROM EMPTY VALUES
+            FILTERED_ACTIONS = { k:v  for k, v in page["actions"].items() if v }
+            SORTED_ACTIONS = OrderedDict(sorted(FILTERED_ACTIONS.items()))
+            
+            #POP "ID" KEY AND CONVERT TO LIST
+            SORTED_ARRAY_ACTIONS = [action[1] for action in SORTED_ACTIONS.items()]
+
+            EVENTS = page["events"]
+            SORTED_EVENTS = sorted(EVENTS, key=lambda x: x["ContainerID"])
 
             data = json.dumps(
                 OrderedDict([
-                    ("actions", actions),
-                    ("events", events),
+                    ("actions", SORTED_ARRAY_ACTIONS),
+                    ("events", SORTED_EVENTS),
                 ]),
                 indent=4
             )
@@ -1010,8 +1015,7 @@ class ApplicationTagHandler(TagHandler):
             "security": SecurityTagHandler,
         }
 
-        if PARSER.config["parse_all"] or \
-                PARSER.config["parse"]["app_actions"]:
+        if PARSER.config["parse_all"] or PARSER.config["parse"]["app_actions"]:
 
             tag_handlers_map["actions"] = ActionsTagHandler
 
