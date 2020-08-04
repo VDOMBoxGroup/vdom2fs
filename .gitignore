@@ -3,3 +3,7 @@ application.xml
 application_bkp.xml
 
 .vscode/
+
+exported_apps/
+
+configs/
