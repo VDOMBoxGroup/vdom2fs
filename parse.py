@@ -624,9 +624,10 @@ class ActionsTagHandler(TagHandler):
 
         # this fix the bug with
         # "State": 'True' or 'true' string format jumping.
-        self.actions_map[self.current_action["name"]] = {
-            k: v.lower() for k,v in self.current_action["attrs"].items()
-        }
+        GET_ATTR_TUPLE = lambda k ,v: (k, v.lower()) if k == 'State' else (k, v)
+        self.actions_map[self.current_action["name"]] = OrderedDict(
+            GET_ATTR_TUPLE(k ,v) for k,v in self.current_action["attrs"].iteritems()
+        )
 
         action_path = os.path.join(PARSER.current_path(),
                                    self.current_action["name"])
@@ -832,7 +833,7 @@ class E2vdomTagHandler(TagHandler):
 
             SORTED_EVENTS = sorted(
                 page['events'], 
-                key=lambda event: (event['ContainerID'], event['Top'], event["Left"])
+                key=lambda event: (event['ContainerID'], int(event['Top']), int(event["Left"]))
             )
 
             data = json.dumps(
