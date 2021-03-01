@@ -628,8 +628,6 @@ class ActionsTagHandler(TagHandler):
             k: v.lower() for k,v in self.current_action["attrs"].items()
         }
 
-        print self.actions_map[self.current_action["name"]]['State']
-
         action_path = os.path.join(PARSER.current_path(),
                                    self.current_action["name"])
 
