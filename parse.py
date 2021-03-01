@@ -623,8 +623,13 @@ class ActionsTagHandler(TagHandler):
             data
         )
 
-        self.actions_map[self.current_action["name"]] = \
-            self.current_action["attrs"]
+        # this fix the bug with
+        # "State": 'True' or 'true' string format jumping.
+        self.actions_map[self.current_action["name"]] = {
+            k: v.lower() for k,v in self.current_action["attrs"].items()
+        }
+
+        print self.actions_map[self.current_action["name"]]['State']
 
         action_path = os.path.join(PARSER.current_path(),
                                    self.current_action["name"])
