@@ -9,7 +9,6 @@ import json
 import logging
 import os
 import re
-from itertools import groupby
 import xml.parsers.expat
 
 from collections import OrderedDict, defaultdict
@@ -827,31 +826,21 @@ class E2vdomTagHandler(TagHandler):
         for page in PARSER.pages.values():
             PARSER.pages["current"] = page["id"]
 
-            #FILTER FROM EMPTY VALUES
+            # remove keys with empty value.
             FILTERED_ACTIONS = { k:v  for k, v in page["actions"].items() if v }
+
+            # sort actions by keys.
             SORTED_ACTIONS = OrderedDict(sorted(FILTERED_ACTIONS.items()))
-            
-            #POP "ID" KEY AND CONVERT TO LIST
-            SORTED_ARRAY_ACTIONS = [action[1] for action in SORTED_ACTIONS.items()]
 
-            RESULT_EVENTS = []
-            EVENTS_GROUP_BUFFER = {} #{"ContainerID": [obj,obj,..], "ContainerID2": [obj], ...}
-            EVENTS_GROUPS = groupby(page['events'], key=lambda x: x['ContainerID'])
-
-            for group_attr, value in EVENTS_GROUPS:
-                if group_attr in EVENTS_GROUP_BUFFER:
-                    EVENTS_GROUP_BUFFER[group_attr] += list(value)
-                    continue
-                EVENTS_GROUP_BUFFER[group_attr] = list(value)
-            
-            SORTED_EVENTS_BUFFER = OrderedDict(sorted(EVENTS_GROUP_BUFFER.items()))
-            for k in SORTED_EVENTS_BUFFER.keys():
-                RESULT_EVENTS += sorted(SORTED_EVENTS_BUFFER[k], key=lambda e: int(e['Top']))
+            SORTED_EVENTS = sorted(
+                page['events'], 
+                key=lambda event: (event['ContainerID'], event['Top'], event["Left"])
+            )
 
             data = json.dumps(
                 OrderedDict([
-                    ("actions", SORTED_ARRAY_ACTIONS),
-                    ("events", RESULT_EVENTS),
+                    ("actions", SORTED_ACTIONS.values()),
+                    ("events", SORTED_EVENTS),
                 ]),
                 indent=4
             )
