@@ -1071,7 +1071,7 @@ class Parser(object):
         DEBUG("Writing data to %s", path)
 
         with open_file(path, "wb") as hdlr:
-            hdlr.write(data)
+            hdlr.write(data.encode('utf-8') if type(data) == unicode else data)
 
     def write_json_file(self, name, data):
         """Convert data to JSON and

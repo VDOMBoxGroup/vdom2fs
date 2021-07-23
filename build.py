@@ -533,7 +533,7 @@ def write_object(path, name, indent):
             source_file_name = obj_json["attrs"]["source_file_name"]
             del obj_json["attrs"]["source_file_name"]
             with open_file(os.path.join(path, source_file_name)) as source_file:
-                obj_json["attributes"]["source"] = encode(clean_data(source_file.read()))
+                obj_json["attributes"]["source"] = clean_data(source_file.read()).decode('utf-8')
 
     write_xml("Object", attrs=obj_json["attrs"], indent=indent)
     write_xml("Actions", indent=indent+2, data="", close=True)
