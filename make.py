@@ -397,6 +397,11 @@ def copy_pages(config):
                                constants.PAGES_FOLDER)
 
     pages = config["Pages"]
+    params = {
+        # "rename": None,
+        "exclude": None,
+        "include": None
+    }
 
     if not isinstance(pages, (list, tuple)):
         pages = (pages,)
@@ -404,29 +409,51 @@ def copy_pages(config):
     new_pages = []
     for page in pages:
         if isinstance(page, (str, unicode)):
-            page = {
-                "path": page
+            _page = {
+                "path": normalize_path(page, config)
             }
 
-        if not page["path"].rstrip("\/").lower().endswith("pages"):
+        if not _page["path"].rstrip("\/").lower().endswith("pages"):
             new_pages.append(page)
-
         else:
-            page["path"] = normalize_path(page["path"], config)
-            if not os.path.exists(page["path"]):
-                ERROR("No such directory: '%s'", page["path"])
+            if isinstance(page, dict):
+                _page["path"] = normalize_path(page["path"], config)
+
+                for param in params:
+                    params[param] = val = page.get(param, None)
+                    if val and not isinstance(val, (list, tuple, dict)):
+                        params[param] = (val,)
+
+                if params["exclude"]:
+                    params["exclude"] = convert_to_regexp(params["exclude"])
+
+                if params["include"]:
+                    params["include"] = convert_to_regexp(params["include"])
+
+            if not os.path.exists(_page["path"]):
+                ERROR("No such directory: '%s'", _page["path"])
                 continue
 
-            for folder in os.listdir(page["path"]):
-                folder_path = os.path.join(page["path"], folder)
+            for folder in os.listdir(_page["path"]):
+
+                # if folder in exclude list - continue
+                if params["exclude"] and check_by_regexps(folder, params["exclude"]):
+                    continue
+
+                # if folder not in include list - continue
+                if params["include"] and not check_by_regexps(folder, params["include"]):
+                    continue
+
+                folder_path = os.path.join(_page["path"], folder)
 
                 if not os.path.isdir(folder_path):
                     ERROR("Page can't be file: %s", folder_path)
                     continue
 
-                new_page = page.copy()
+                new_page = _page.copy()
                 new_page["path"] = folder_path
                 new_pages.append(new_page)
+
 
     for page in new_pages:
 
